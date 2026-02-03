@@ -14,8 +14,7 @@
  * nanobind instead of pybind11. The original pytensor.hpp is licensed      *
  * under the BSD 3-Clause License (see below).                              *
  *                                                                          *
- * Note: This code requires a C++20 compiler (tested with GCC 14, clang 16, *
- *       clang 17,clang-cl 19).                                             *
+ * Note: This code requires a C++17 compiler.                               *
  *                                                                          *
  * Usage: Include this header in your C++ project to utilize the pytensor   *
  *        class for seamless interoperability between C++ and Python using  *
@@ -59,7 +58,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.             *
  ****************************************************************************/
 
-#pragma once
+#ifndef XTENSOR_PYTHON_NANOBIND_PYTENSOR_HPP
+#define XTENSOR_PYTHON_NANOBIND_PYTENSOR_HPP
 
 #include <algorithm>
 #include <array>
@@ -75,166 +75,86 @@
 #include <vector>
 
 #include <nanobind/nanobind.h>
-#include <nanobind/nb_python.h>
 #include <nanobind/ndarray.h>
 
-#include <xtl/xsequence.hpp>
+#include "xtensor/containers/xbuffer_adaptor.hpp"
+#include "xtensor/containers/xtensor.hpp"
+#include "xtensor/core/xiterator.hpp"
+#include "xtensor/core/xsemantic.hpp"
+#include "xtensor/core/xfunction.hpp"
+#include "xtensor/utils/xutils.hpp"
+#include "xtensor/views/xview.hpp"
+#include "xtensor/views/xbroadcast.hpp"
+#include "xtensor/views/xindex_view.hpp"
+#include "xtensor/reducers/xreducer.hpp"
 
-#include <xtensor/containers/xarray.hpp>
-#include <xtensor/containers/xbuffer_adaptor.hpp>
-#include <xtensor/containers/xtensor.hpp>
-#include <xtensor/containers/xscalar.hpp>
-#include <xtensor/core/xassign.hpp>
-#include <xtensor/core/xfunction.hpp>
-#include <xtensor/core/xeval.hpp>
-#include <xtensor/reducers/xreducer.hpp>
-#include <xtensor/views/xindex_view.hpp>
-#include <xtensor/views/xview.hpp>
+#include "pycontainer.hpp"
+#include "../xtensor_python_config.hpp"
+
+// Forward declarations
+namespace xt
+{
+    namespace nanobind
+    {
+        template <class T, std::size_t N, layout_type L = layout_type::dynamic>
+        class pytensor;
+    }
+}
+
+// xcontainer_inner_types must be defined before pytensor class
+namespace xt
+{
+    template <class T, std::size_t N, layout_type L>
+    struct xiterable_inner_types<nanobind::pytensor<T, N, L>>
+        : xcontainer_iterable_types<nanobind::pytensor<T, N, L>>
+    {
+    };
+
+    template <class T, std::size_t N, layout_type L>
+    struct xcontainer_inner_types<nanobind::pytensor<T, N, L>>
+    {
+        using storage_type = xbuffer_adaptor<T*>;
+        using reference = typename storage_type::reference;
+        using const_reference = typename storage_type::const_reference;
+        using size_type = typename storage_type::size_type;
+        using shape_type = std::array<std::ptrdiff_t, N>;
+        using strides_type = shape_type;
+        using backstrides_type = shape_type;
+        using inner_shape_type = shape_type;
+        using inner_strides_type = strides_type;
+        using inner_backstrides_type = backstrides_type;
+        using temporary_type = nanobind::pytensor<T, N, L>;
+        static constexpr layout_type layout = L;
+    };
+}
 
 namespace xt
 {
     namespace nanobind
     {
+        // Expression tag for nanobind pytensor
         struct pytensor_expression_tag : xt::xtensor_expression_tag
         {
         };
 
+        // Forward declaration
+        template <class T, std::size_t N, layout_type L>
+        class pytensor;
+
         namespace detail
         {
-            template <class TensorRef, class IndicesContainer, std::size_t Dim>
-            class pytensor_index_view
+            // Helper trait to detect if a type is NOT a pytensor or xexpression
+            template <class S, class PyT>
+            struct is_shape_type : std::integral_constant<bool,
+                !std::is_same_v<std::decay_t<S>, PyT> &&
+                !std::is_base_of_v<xexpression<std::decay_t<S>>, std::decay_t<S>>>
             {
-            public:
-                using tensor_type = std::remove_reference_t<TensorRef>;
-                using value_type = typename tensor_type::value_type;
-                using size_type = typename tensor_type::size_type;
-
-                pytensor_index_view(TensorRef tensor, IndicesContainer& indices)
-                    : m_tensor(tensor)
-                    , m_indices(indices)
-                {
-                }
-
-                template <class Expression>
-                pytensor_index_view& operator=(const Expression& expression)
-                {
-                    auto evaluated = xt::eval(expression);
-                    auto expected_size = m_indices.size();
-                    if (evaluated.size() != expected_size)
-                    {
-                        throw std::runtime_error("pytensor index_view assignment size mismatch");
-                    }
-
-                    for (std::size_t idx = 0; idx < expected_size; ++idx)
-                    {
-                        assign_element(m_indices[idx], static_cast<value_type>(evaluated(idx)));
-                    }
-                    return *this;
-                }
-
-            private:
-                template <class Index>
-                void assign_element(const Index& index, const value_type& value)
-                {
-                    assign_element_impl(index, value, std::make_index_sequence<Dim>{});
-                }
-
-                template <class Index, std::size_t... Axis>
-                void assign_element_impl(const Index& index, const value_type& value, std::index_sequence<Axis...>)
-                {
-                    m_tensor(static_cast<size_type>(index[Axis])...) = value;
-                }
-
-                TensorRef m_tensor;
-                IndicesContainer& m_indices;
             };
-        } // namespace detail
 
-        namespace detail
-        {
-            template <class Strides, class Shape>
-            inline bool is_row_major(const Strides& strides, const Shape& shape)
-            {
-                using size_type = typename Shape::value_type;
-                constexpr std::size_t rank = std::tuple_size_v<Shape>;
-                if constexpr (rank <= 1)
-                {
-                    return true;
-                }
+            template <class S, class PyT>
+            inline constexpr bool is_shape_type_v = is_shape_type<S, PyT>::value;
 
-                auto expected = static_cast<std::make_signed_t<size_type>>(1);
-                for (std::ptrdiff_t axis = static_cast<std::ptrdiff_t>(rank) - 1; axis >= 0; --axis)
-                {
-                    if (static_cast<std::make_signed_t<size_type>>(strides[static_cast<size_type>(axis)]) != expected)
-                    {
-                        return false;
-                    }
-                    expected *= static_cast<std::make_signed_t<size_type>>(shape[static_cast<size_type>(axis)]);
-                }
-                return true;
-            }
-
-            template <class Strides, class Shape>
-            inline bool is_column_major(const Strides& strides, const Shape& shape)
-            {
-                using size_type = typename Shape::value_type;
-                constexpr std::size_t rank = std::tuple_size_v<Shape>;
-                if constexpr (rank <= 1)
-                {
-                    return true;
-                }
-
-                auto expected = static_cast<std::make_signed_t<size_type>>(1);
-                for (size_type axis = 0; axis < rank; ++axis)
-                {
-                    if (static_cast<std::make_signed_t<size_type>>(strides[axis]) != expected)
-                    {
-                        return false;
-                    }
-                    expected *= static_cast<std::make_signed_t<size_type>>(shape[axis]);
-                }
-                return true;
-            }
-
-            template <class Shape, class Strides>
-            inline void compute_contiguous_strides_row_major(Shape& shape, Strides& strides)
-            {
-                using size_type = typename Shape::value_type;
-                constexpr std::size_t rank = std::tuple_size_v<Shape>;
-                if constexpr (rank == 0)
-                {
-                    return;
-                }
-
-                strides.back() = size_type(1);
-                for (std::ptrdiff_t axis = static_cast<std::ptrdiff_t>(rank) - 2; axis >= 0; --axis)
-                {
-                    auto next_axis = static_cast<size_type>(axis + 1);
-                    strides[static_cast<size_type>(axis)] = strides[next_axis] * std::max(shape[next_axis], size_type(1));
-                }
-            }
-
-            template <class Shape, class Strides>
-            inline void compute_contiguous_strides_column_major(Shape& shape, Strides& strides)
-            {
-                using size_type = typename Shape::value_type;
-                constexpr std::size_t rank = std::tuple_size_v<Shape>;
-                if constexpr (rank == 0)
-                {
-                    return;
-                }
-
-                strides.front() = size_type(1);
-                for (size_type axis = 1; axis < rank; ++axis)
-                {
-                    auto previous_axis = static_cast<size_type>(axis - 1);
-                    strides[axis] = strides[previous_axis] * std::max(shape[previous_axis], size_type(1));
-                }
-            }
-        } // namespace detail
-
-        namespace detail
-        {
+            // ndarray type helper for different layouts
             template <class Scalar, std::size_t N, layout_type Layout>
             struct ndarray_type_helper
             {
@@ -256,586 +176,587 @@ namespace xt
             {
                 using type = ::nanobind::ndarray<Scalar, ::nanobind::ndim<N>, ::nanobind::numpy, ::nanobind::f_contig>;
             };
-        }
 
-        template <class T, std::size_t N, layout_type Layout = layout_type::dynamic>
-        class pytensor
-            : public xtensor_adaptor<
-                  xt::xbuffer_adaptor<
-                      std::conditional_t<std::is_const_v<T>, const std::remove_const_t<T>*, std::remove_const_t<T>*>,
-                      xt::no_ownership,
-                      std::allocator<std::remove_const_t<T>>>,
-                  N,
-                  layout_type::dynamic>
+            // Stride computation utilities
+            template <class Shape, class Strides>
+            inline void compute_strides_row_major(const Shape& shape, Strides& strides)
+            {
+                using size_type = typename Shape::value_type;
+                constexpr std::size_t rank = std::tuple_size_v<Shape>;
+                if constexpr (rank == 0)
+                {
+                    return;
+                }
+
+                strides.back() = size_type(1);
+                for (std::ptrdiff_t axis = static_cast<std::ptrdiff_t>(rank) - 2; axis >= 0; --axis)
+                {
+                    auto next_axis = static_cast<std::size_t>(axis + 1);
+                    strides[static_cast<std::size_t>(axis)] = strides[next_axis] * std::max(shape[next_axis], size_type(1));
+                }
+            }
+
+            template <class Shape, class Strides>
+            inline void compute_strides_column_major(const Shape& shape, Strides& strides)
+            {
+                using size_type = typename Shape::value_type;
+                constexpr std::size_t rank = std::tuple_size_v<Shape>;
+                if constexpr (rank == 0)
+                {
+                    return;
+                }
+
+                strides.front() = size_type(1);
+                for (std::size_t axis = 1; axis < rank; ++axis)
+                {
+                    auto previous_axis = axis - 1;
+                    strides[axis] = strides[previous_axis] * std::max(shape[previous_axis], size_type(1));
+                }
+            }
+
+        } // namespace detail
+
+        /**
+         * @class pytensor
+         * @brief Multidimensional container providing the xtensor container semantics wrapping a numpy array.
+         *
+         * pytensor is similar to the xtensor container in that it has a static dimensionality.
+         *
+         * Unlike the pyarray container, pytensor cannot be reshaped with a different number of dimensions
+         * and reshapes are not reflected on the Python side. However, pytensor has benefits compared to pyarray
+         * in terms of performances. pytensor shapes are stack-allocated which makes iteration upon pytensor
+         * faster than with pyarray.
+         *
+         * @tparam T The type of the element stored in the pytensor.
+         * @tparam N The number of dimensions.
+         * @tparam L The layout type (row_major, column_major, or dynamic).
+         * @sa pyarray
+         */
+        template <class T, std::size_t N, layout_type L>
+        class pytensor : public pycontainer<pytensor<T, N, L>>,
+                         public xcontainer_semantic<pytensor<T, N, L>>
         {
-        private:
-            using base_type = xtensor_adaptor<
-                xt::xbuffer_adaptor<
-                    std::conditional_t<std::is_const_v<T>, const std::remove_const_t<T>*, std::remove_const_t<T>*>,
-                    xt::no_ownership,
-                    std::allocator<std::remove_const_t<T>>>,
-                N,
-                layout_type::dynamic>;
-
         public:
-            using self_type = pytensor<T, N, Layout>;
-            using scalar_type = std::remove_const_t<T>;
-            using ndarray_scalar_type = std::conditional_t<std::is_const_v<T>, const scalar_type, scalar_type>;
-            using ndarray_type = typename detail::ndarray_type_helper<ndarray_scalar_type, N, Layout>::type;
-            static_assert(
-                Layout != layout_type::dynamic
-                    || std::is_same_v<
-                        ndarray_type,
-                        ::nanobind::ndarray<
-                            ndarray_scalar_type,
-                            ::nanobind::ndim<N>,
-                            ::nanobind::numpy,
-                            ::nanobind::any_contig>>,
-                "pytensor ndarray_type helper mismatch for dynamic layout");
-            using buffer_type = typename base_type::storage_type;
+
+            using self_type = pytensor<T, N, L>;
+            using semantic_base = xcontainer_semantic<self_type>;
+            using base_type = pycontainer<self_type>;
+            using storage_type = typename base_type::storage_type;
+            using value_type = typename base_type::value_type;
+            using reference = typename base_type::reference;
+            using const_reference = typename base_type::const_reference;
+            using pointer = typename base_type::pointer;
+            using const_pointer = typename base_type::const_pointer;
             using size_type = typename base_type::size_type;
+            using difference_type = typename base_type::difference_type;
             using shape_type = typename base_type::shape_type;
             using strides_type = typename base_type::strides_type;
-            using value_type = scalar_type;
-            using reference = std::conditional_t<std::is_const_v<T>, const scalar_type&, scalar_type&>;
-            using const_reference = const scalar_type&;
-            using pointer = std::conditional_t<std::is_const_v<T>, const scalar_type*, scalar_type*>;
-            using const_pointer = const scalar_type*;
+            using backstrides_type = typename base_type::backstrides_type;
+            using inner_shape_type = typename base_type::inner_shape_type;
+            using inner_strides_type = typename base_type::inner_strides_type;
+            using inner_backstrides_type = typename base_type::inner_backstrides_type;
+
             using expression_tag = pytensor_expression_tag;
-            static constexpr layout_type static_layout = Layout;
+            constexpr static std::size_t rank = N;
+            constexpr static layout_type static_layout = L;
 
-            pytensor()
-                : base_type(buffer_type{})
-            {
-                shape_type shape{};
-                strides_type strides{};
-                if constexpr (std::tuple_size_v<shape_type> > 0)
-                {
-                    shape.fill(size_type(0));
-                    strides.fill(size_type(0));
-                }
-                this->resize(shape, strides);
-            }
+            // nanobind-specific types
+            using scalar_type = std::remove_const_t<T>;
+            using ndarray_scalar_type = std::conditional_t<std::is_const_v<T>, const scalar_type, scalar_type>;
+            using ndarray_type = typename detail::ndarray_type_helper<ndarray_scalar_type, N, L>::type;
 
-            explicit pytensor(ndarray_type array)
-                : base_type(buffer_type{})
-            {
-                reset_from_ndarray(std::move(array));
-            }
+            // Constructors
+            pytensor();
+            pytensor(nested_initializer_list_t<T, N> t);
 
-            template <class ShapeLike,
-                      std::enable_if_t<!std::is_same_v<std::decay_t<ShapeLike>, self_type>
-                                            && !std::is_same_v<std::decay_t<ShapeLike>, ndarray_type>
-                                            && !std::is_base_of_v<xt::xexpression<std::decay_t<ShapeLike>>, std::decay_t<ShapeLike>>,
-                                        int> = 0>
-            explicit pytensor(ShapeLike&& shape_like)
-                : base_type(buffer_type{})
-            {
-                auto temporary = from_shape(std::forward<ShapeLike>(shape_like));
-                *this = std::move(temporary);
-            }
+            template <class S, std::enable_if_t<detail::is_shape_type_v<S, self_type>, int> = 0>
+            explicit pytensor(S&& shape, layout_type l = L);
+            template <class S, std::enable_if_t<detail::is_shape_type_v<S, self_type>, int> = 0>
+            explicit pytensor(S&& shape, const_reference value, layout_type l = L);
+            explicit pytensor(const shape_type& shape, const strides_type& strides, const_reference value);
+            explicit pytensor(const shape_type& shape, const strides_type& strides);
 
-            template <class ShapeLike,
-                      class Value,
-                      std::enable_if_t<!std::is_same_v<std::decay_t<ShapeLike>, self_type>
-                                            && !std::is_same_v<std::decay_t<ShapeLike>, ndarray_type>
-                                            && !std::is_base_of_v<xt::xexpression<std::decay_t<ShapeLike>>, std::decay_t<ShapeLike>>
-                                            && std::is_convertible_v<Value, scalar_type>
-                                            && !std::is_const_v<T>,
-                                        int> = 0>
-            pytensor(ShapeLike&& shape_like, Value&& value)
-                : base_type(buffer_type{})
-            {
-                auto temporary = from_shape(std::forward<ShapeLike>(shape_like));
-                temporary.fill(static_cast<scalar_type>(std::forward<Value>(value)));
-                *this = std::move(temporary);
-            }
+            // nanobind-specific constructors
+            explicit pytensor(ndarray_type array);
 
-            template <std::enable_if_t<!std::is_const_v<T>, int> = 0>
-            pytensor(const shape_type& shape, const value_type& value)
-                : base_type(buffer_type{})
-            {
-                auto temporary = from_shape(shape);
-                temporary.fill(value);
-                *this = std::move(temporary);
-            }
+            template <class S = shape_type>
+            static pytensor from_shape(S&& shape);
 
-            template <class Integral,
-                      class Value,
-                      std::enable_if_t<std::is_integral_v<std::decay_t<Integral>>
-                                           && std::is_convertible_v<Value, scalar_type>
-                                           && !std::is_const_v<T>,
-                                       int> = 0>
-            pytensor(std::initializer_list<Integral> shape_list, Value&& value)
-                : base_type(buffer_type{})
-            {
-                auto temporary = from_shape(shape_list);
-                temporary.fill(static_cast<scalar_type>(std::forward<Value>(value)));
-                *this = std::move(temporary);
-            }
+            // Copy/move
+            pytensor(const self_type& rhs);
+            self_type& operator=(const self_type& rhs);
 
-            template <class EC,
-                      xt::layout_type TensorLayout,
-                      class Tag,
-                      std::enable_if_t<!std::is_const_v<T>, int> = 0>
-            pytensor(xt::xtensor_container<EC, N, TensorLayout, Tag> tensor)
-                : base_type(buffer_type{})
-            {
-                adopt_xtensor_container(
-                    std::make_unique<xt::xtensor_container<EC, N, TensorLayout, Tag>>(std::move(tensor)));
-            }
+            pytensor(self_type&&) = default;
+            self_type& operator=(self_type&& e) = default;
 
-            pytensor(const pytensor&) = default;
-            pytensor(pytensor&&) noexcept = default;
-            pytensor& operator=(const pytensor&) = default;
-            pytensor& operator=(pytensor&&) noexcept = default;
+            // Expression conversion
+            template <class E>
+            pytensor(const xexpression<E>& e);
 
-            template <class E, std::enable_if_t<!std::is_const_v<T>, int> = 0>
-            pytensor(const xexpression<E>& expression)
-                : base_type(buffer_type{})
-            {
-                assign_expression(expression.derived_cast());
-            }
+            template <class E>
+            self_type& operator=(const xexpression<E>& e);
 
-            template <class E, std::enable_if_t<!std::is_const_v<T>, int> = 0>
-            pytensor& operator=(const xexpression<E>& expression)
-            {
-                assign_expression(expression.derived_cast());
-                return *this;
-            }
+            using base_type::begin;
+            using base_type::end;
 
-            template <class EC,
-                      xt::layout_type TensorLayout,
-                      class Tag,
-                      std::enable_if_t<!std::is_const_v<T>, int> = 0>
-            pytensor& operator=(xt::xtensor_container<EC, N, TensorLayout, Tag> tensor)
-            {
-                adopt_xtensor_container(
-                    std::make_unique<xt::xtensor_container<EC, N, TensorLayout, Tag>>(std::move(tensor)));
-                return *this;
-            }
+            // Use semantic_base operators to avoid ambiguity
+            using semantic_base::operator+=;
+            using semantic_base::operator-=;
+            using semantic_base::operator*=;
+            using semantic_base::operator/=;
+            using semantic_base::operator|=;
+            using semantic_base::operator&=;
+            using semantic_base::operator^=;
 
-            template <std::enable_if_t<!std::is_const_v<T>, int> = 0>
-            pytensor& operator=(typename base_type::temporary_type&& rhs)
-            {
-                base_type::operator=(std::move(rhs));
-                return *this;
-            }
+            // nanobind-specific methods
+            bool is_valid() const noexcept;
+            ndarray_type& ndarray() noexcept;
+            const ndarray_type& ndarray() const noexcept;
 
-            using base_type::operator+=;
-            using base_type::operator-=;
-            using base_type::operator*=;
-            using base_type::operator/=;
-
-            ~pytensor() = default;
-
-            template <class ShapeLike>
-            static self_type from_shape(ShapeLike&& shape_like)
-            {
-                static_assert(!std::is_const_v<T>, "pytensor::from_shape requires a mutable tensor type");
-
-                shape_type shape = xtl::forward_sequence<shape_type, ShapeLike>(std::forward<ShapeLike>(shape_like));
-
-                strides_type strides{};
-                if constexpr (std::tuple_size_v<strides_type> > 0)
-                {
-                    if constexpr (Layout == layout_type::column_major)
-                    {
-                        detail::compute_contiguous_strides_column_major(shape, strides);
-                    }
-                    else
-                    {
-                        detail::compute_contiguous_strides_row_major(shape, strides);
-                    }
-                }
-
-                constexpr std::size_t rank = std::tuple_size_v<shape_type>;
-                std::array<size_t, rank> shape_buffer{};
-                size_t total_size = 1;
-                if constexpr (rank > 0)
-                {
-                    for (std::size_t axis = 0; axis < rank; ++axis)
-                    {
-                        size_t extent = static_cast<size_t>(shape[axis]);
-                        shape_buffer[axis] = extent;
-                        total_size *= extent;
-                    }
-                }
-
-                constexpr std::size_t stride_rank = std::tuple_size_v<strides_type>;
-                std::array<int64_t, stride_rank> stride_buffer{};
-                if constexpr (stride_rank > 0)
-                {
-                    for (std::size_t axis = 0; axis < stride_rank; ++axis)
-                    {
-                        stride_buffer[axis] = static_cast<int64_t>(strides[axis]);
-                    }
-                }
-
-                scalar_type* raw_ptr = nullptr;
-                ::nanobind::object owner;
-                if (total_size > 0)
-                {
-                    raw_ptr = new scalar_type[total_size];
-                    owner = ::nanobind::capsule(
-                        raw_ptr,
-                        [](void* p) noexcept { delete[] static_cast<scalar_type*>(p); });
-                }
-
-                char order = 'C';
-                if constexpr (Layout == layout_type::column_major)
-                {
-                    order = 'F';
-                }
-
-                ndarray_type array(
-                    static_cast<pointer>(raw_ptr),
-                    rank,
-                    rank > 0 ? shape_buffer.data() : nullptr,
-                    owner.ptr(),
-                    stride_rank > 0 ? stride_buffer.data() : nullptr,
-                    ::nanobind::dtype<ndarray_scalar_type>(),
-                    (int) ::nanobind::device::cpu::value,
-                    0,
-                    order);
-
-                return self_type(std::move(array));
-            }
-
-            template <class Integral,
-                      std::enable_if_t<std::is_integral_v<std::decay_t<Integral>>, int> = 0>
-            static self_type from_shape(std::initializer_list<Integral> shape_list)
-            {
-                shape_type shape{};
-                std::size_t axis = 0;
-
-                for (auto extent : shape_list)
-                {
-                    if (axis >= shape.size())
-                    {
-                        throw std::runtime_error("pytensor::from_shape received too many dimensions");
-                    }
-                    shape[axis++] = static_cast<size_type>(extent);
-                }
-
-                for (; axis < shape.size(); ++axis)
-                {
-                    shape[axis] = size_type(0);
-                }
-
-                return from_shape(std::move(shape));
-            }
-
-            template <class Array>
-            void reset_from_ndarray(Array&& array [[maybe_unused]])
-            {
-                ndarray_type nb_array(std::forward<Array>(array));
-
-                auto shape = compute_shape(nb_array);
-                auto strides = compute_strides(nb_array, shape);
-
-                if constexpr (Layout == layout_type::row_major)
-                {
-                    if (!detail::is_row_major(strides, shape))
-                    {
-                        throw std::runtime_error("Expected row-major contiguous array for pytensor");
-                    }
-                }
-                else if constexpr (Layout == layout_type::column_major)
-                {
-                    if (!detail::is_column_major(strides, shape))
-                    {
-                        throw std::runtime_error("Expected column-major contiguous array for pytensor");
-                    }
-                }
-
-                this->reset_buffer(nb_array.data(), static_cast<size_type>(nb_array.size()));
-                this->resize(shape, strides);
-                m_array = std::move(nb_array);
-
-                if constexpr (Layout == layout_type::dynamic)
-                {
-                    this->mutable_layout() = deduce_layout(m_array, shape, strides);
-                }
-                else
-                {
-                    this->mutable_layout() = Layout;
-                }
-            }
-
-            void reset_from_ndarray(ndarray_type array)
-            {
-                reset_from_ndarray<ndarray_type>(std::move(array));
-            }
-
-            template <class Array>
-            void bind(Array&& array)
-            {
-                reset_from_ndarray(std::forward<Array>(array));
-            }
-
-            void bind(ndarray_type array)
-            {
-                reset_from_ndarray(std::move(array));
-            }
-
-            bool is_valid() const noexcept
-            {
-                return m_array.is_valid();
-            }
-
-            ndarray_type& ndarray() noexcept
-            {
-                return m_array;
-            }
-
-            const ndarray_type& ndarray() const noexcept
-            {
-                return m_array;
-            }
+            void reset_from_ndarray(ndarray_type array);
 
         private:
-            template <class Expression>
-            void assign_expression(const Expression& expression)
-            {
-                using expression_type = std::decay_t<Expression>;
-                static_assert(!std::is_same_v<expression_type, self_type>, "pytensor expression assignment should use copy/move operators");
 
-                if constexpr (Layout == layout_type::column_major)
-                {
-                    auto owned_tensor = std::make_unique<xt::xtensor<scalar_type, N, layout_type::column_major>>(expression);
-                    adopt_xtensor_container(std::move(owned_tensor));
-                }
-                else if constexpr (Layout == layout_type::row_major)
-                {
-                    auto owned_tensor = std::make_unique<xt::xtensor<scalar_type, N, layout_type::row_major>>(expression);
-                    adopt_xtensor_container(std::move(owned_tensor));
-                }
-                else
-                {
-                    layout_type selected_layout = layout_type::row_major;
-                    if constexpr (requires { expression.layout(); })
-                    {
-                        auto expression_layout = expression.layout();
-                        if (expression_layout == layout_type::column_major)
-                        {
-                            selected_layout = layout_type::column_major;
-                        }
-                    }
-
-                    if (selected_layout == layout_type::column_major)
-                    {
-                        auto owned_tensor = std::make_unique<xt::xtensor<scalar_type, N, layout_type::column_major>>(expression);
-                        adopt_xtensor_container(std::move(owned_tensor));
-                    }
-                    else
-                    {
-                        auto owned_tensor = std::make_unique<xt::xtensor<scalar_type, N, layout_type::row_major>>(expression);
-                        adopt_xtensor_container(std::move(owned_tensor));
-                    }
-                }
-            }
-
-            template <class XTensor>
-            void adopt_xtensor_container(std::unique_ptr<XTensor> owned_tensor)
-            {
-                static_assert(!std::is_const_v<T>, "pytensor::adopt_xtensor_container requires mutable tensor");
-                static_assert(XTensor::rank == N, "xtensor rank mismatch for pytensor adoption");
-
-                using xtensor_value_type = typename XTensor::value_type;
-                static_assert(
-                    std::is_same_v<std::remove_const_t<xtensor_value_type>, scalar_type>,
-                    "xtensor value_type mismatch for pytensor adoption");
-
-                auto* raw_tensor = owned_tensor.get();
-
-                std::array<size_t, N> shape{};
-                if constexpr (N > 0)
-                {
-                    const auto& xt_shape = raw_tensor->shape();
-                    for (std::size_t axis = 0; axis < N; ++axis)
-                    {
-                        shape[axis] = static_cast<size_t>(xt_shape[axis]);
-                    }
-                }
-
-                std::array<int64_t, N> stride_buffer{};
-                if constexpr (N > 0)
-                {
-                    const auto& xt_strides = raw_tensor->strides();
-                    for (std::size_t axis = 0; axis < N; ++axis)
-                    {
-                        stride_buffer[axis] = static_cast<int64_t>(xt_strides[axis]);
-                    }
-                }
-
-                const bool xtensor_row_major = detail::is_row_major(stride_buffer, shape);
-                const bool xtensor_column_major = detail::is_column_major(stride_buffer, shape);
-
-                if (!xtensor_row_major && !xtensor_column_major)
-                {
-                    throw std::runtime_error("pytensor requires contiguous xtensor to adopt storage");
-                }
-
-                if constexpr (Layout == layout_type::row_major)
-                {
-                    if (!xtensor_row_major)
-                    {
-                        throw std::runtime_error("Expected row-major xtensor for pytensor row-major layout");
-                    }
-                }
-                else if constexpr (Layout == layout_type::column_major)
-                {
-                    if (!xtensor_column_major)
-                    {
-                        throw std::runtime_error("Expected column-major xtensor for pytensor column-major layout");
-                    }
-                }
-
-                char order = 'C';
-                if constexpr (Layout == layout_type::column_major)
-                {
-                    order = 'F';
-                }
-                else if constexpr (Layout == layout_type::dynamic)
-                {
-                    order = xtensor_column_major ? 'F' : 'C';
-                }
-
-                ::nanobind::object owner = ::nanobind::capsule(
-                    raw_tensor,
-                    [](void* raw) noexcept { delete static_cast<XTensor*>(raw); });
-
-                owned_tensor.release();
-
-                ndarray_type array(
-                    static_cast<pointer>(raw_tensor->data()),
-                    static_cast<size_t>(N),
-                    N > 0 ? shape.data() : nullptr,
-                    owner.ptr(),
-                    N > 0 ? stride_buffer.data() : nullptr,
-                    ::nanobind::dtype<ndarray_scalar_type>(),
-                    ::nanobind::device::cpu::value,
-                    0,
-                    order);
-
-                reset_from_ndarray(std::move(array));
-            }
-
-            static shape_type compute_shape(const ndarray_type& array)
-            {
-                shape_type shape{};
-                if constexpr (std::tuple_size_v<shape_type> > 0)
-                {
-                    for (std::size_t axis = 0; axis < shape.size(); ++axis)
-                    {
-                        shape[axis] = static_cast<size_type>(array.shape(axis));
-                    }
-                }
-                return shape;
-            }
-
-            static strides_type compute_strides(const ndarray_type& array, const shape_type& shape)
-            {
-                strides_type strides{};
-                if constexpr (std::tuple_size_v<strides_type> == 0)
-                {
-                    return strides;
-                }
-
-                const int64_t* strides_ptr = array.stride_ptr();
-                if (strides_ptr == nullptr)
-                {
-                    if constexpr (Layout == layout_type::column_major)
-                    {
-                        detail::compute_contiguous_strides_column_major(shape, strides);
-                    }
-                    else
-                    {
-                        detail::compute_contiguous_strides_row_major(shape, strides);
-                    }
-                }
-                else
-                {
-                    for (std::size_t axis = 0; axis < strides.size(); ++axis)
-                    {
-                        const auto raw_stride = strides_ptr[axis];
-
-                        using stride_value_type = typename strides_type::value_type;
-                        if constexpr (std::is_signed_v<stride_value_type>)
-                        {
-                            strides[axis] = static_cast<stride_value_type>(raw_stride);
-                        }
-                        else
-                        {
-                            if (raw_stride < 0)
-                            {
-                                throw std::runtime_error("pytensor: negative strides are not supported");
-                            }
-                            strides[axis] = static_cast<stride_value_type>(raw_stride);
-                        }
-                    }
-                }
-                return strides;
-            }
-
-            static layout_type deduce_layout(const ndarray_type& array,
-                                             const shape_type& shape,
-                                             const strides_type& strides)
-            {
-                if constexpr (Layout != layout_type::dynamic)
-                {
-                    return Layout;
-                }
-
-                if constexpr (std::tuple_size_v<shape_type> <= 1)
-                {
-                    return layout_type::row_major;
-                }
-
-                if (array.stride_ptr() == nullptr)
-                {
-                    return layout_type::row_major;
-                }
-
-                if (detail::is_row_major(strides, shape))
-                {
-                    return layout_type::row_major;
-                }
-
-                if (detail::is_column_major(strides, shape))
-                {
-                    return layout_type::column_major;
-                }
-
-                return layout_type::dynamic;
-            }
-
+            inner_shape_type m_shape;
+            inner_strides_type m_strides;
+            inner_backstrides_type m_backstrides;
+            storage_type m_storage;
             ndarray_type m_array;
+
+            void init_tensor(const shape_type& shape, const strides_type& strides);
+            void init_from_ndarray();
+
+            inner_shape_type& shape_impl() noexcept;
+            const inner_shape_type& shape_impl() const noexcept;
+            inner_strides_type& strides_impl() noexcept;
+            const inner_strides_type& strides_impl() const noexcept;
+            inner_backstrides_type& backstrides_impl() noexcept;
+            const inner_backstrides_type& backstrides_impl() const noexcept;
+
+            storage_type& storage_impl() noexcept;
+            const storage_type& storage_impl() const noexcept;
+
+            friend class xcontainer<pytensor<T, N, L>>;
+            friend class pycontainer<pytensor<T, N, L>>;
         };
+
+        /***************************
+         * pytensor implementation *
+         ***************************/
+
+        /**
+         * @name Constructors
+         */
+        //@{
+        /**
+         * Allocates an uninitialized pytensor that holds 0 elements.
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline pytensor<T, N, L>::pytensor()
+            : base_type()
+        {
+            m_shape = xtl::make_sequence<shape_type>(N, size_type(0));
+            m_strides = xtl::make_sequence<strides_type>(N, size_type(0));
+            m_backstrides = xtl::make_sequence<backstrides_type>(N, size_type(0));
+            m_storage = storage_type(nullptr, size_type(0));
+        }
+
+        /**
+         * Allocates a pytensor with a nested initializer list.
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline pytensor<T, N, L>::pytensor(nested_initializer_list_t<T, N> t)
+            : base_type()
+        {
+            base_type::resize(xt::shape<shape_type>(t), layout_type::row_major);
+            nested_copy(m_storage.begin(), t);
+        }
+
+        /**
+         * Allocates an uninitialized pytensor with the specified shape and layout.
+         * @param shape the shape of the pytensor
+         * @param l the layout_type of the pytensor
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class S, std::enable_if_t<detail::is_shape_type_v<S, pytensor<T, N, L>>, int>>
+        inline pytensor<T, N, L>::pytensor(S&& shape, layout_type l)
+            : base_type()
+        {
+            shape_type converted_shape;
+            auto it = std::begin(shape);
+            for (std::size_t i = 0; i < N; ++i, ++it)
+            {
+                converted_shape[i] = static_cast<typename shape_type::value_type>(*it);
+            }
+            strides_type strides;
+            if (l == layout_type::column_major)
+            {
+                detail::compute_strides_column_major(converted_shape, strides);
+            }
+            else
+            {
+                detail::compute_strides_row_major(converted_shape, strides);
+            }
+            init_tensor(converted_shape, strides);
+        }
+
+        /**
+         * Allocates a pytensor with the specified shape and layout. Elements
+         * are initialized to the specified value.
+         * @param shape the shape of the pytensor
+         * @param value the value of the elements
+         * @param l the layout_type of the pytensor
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class S, std::enable_if_t<detail::is_shape_type_v<S, pytensor<T, N, L>>, int>>
+        inline pytensor<T, N, L>::pytensor(S&& shape,
+                                           const_reference value,
+                                           layout_type l)
+            : base_type()
+        {
+            shape_type converted_shape;
+            auto it = std::begin(shape);
+            for (std::size_t i = 0; i < N; ++i, ++it)
+            {
+                converted_shape[i] = static_cast<typename shape_type::value_type>(*it);
+            }
+            strides_type strides;
+            if (l == layout_type::column_major)
+            {
+                detail::compute_strides_column_major(converted_shape, strides);
+            }
+            else
+            {
+                detail::compute_strides_row_major(converted_shape, strides);
+            }
+            init_tensor(converted_shape, strides);
+            std::fill(m_storage.begin(), m_storage.end(), value);
+        }
+
+        /**
+         * Allocates an uninitialized pytensor with the specified shape and strides.
+         * Elements are initialized to the specified value.
+         * @param shape the shape of the pytensor
+         * @param strides the strides of the pytensor
+         * @param value the value of the elements
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline pytensor<T, N, L>::pytensor(const shape_type& shape,
+                                           const strides_type& strides,
+                                           const_reference value)
+            : base_type()
+        {
+            init_tensor(shape, strides);
+            std::fill(m_storage.begin(), m_storage.end(), value);
+        }
+
+        /**
+         * Allocates an uninitialized pytensor with the specified shape and strides.
+         * @param shape the shape of the pytensor
+         * @param strides the strides of the pytensor
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline pytensor<T, N, L>::pytensor(const shape_type& shape,
+                                           const strides_type& strides)
+            : base_type()
+        {
+            init_tensor(shape, strides);
+        }
+
+        /**
+         * Constructs a pytensor from a nanobind ndarray.
+         * @param array the nanobind ndarray to wrap
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline pytensor<T, N, L>::pytensor(ndarray_type array)
+            : base_type()
+        {
+            m_array = std::move(array);
+            init_from_ndarray();
+        }
+
+        /**
+         * Allocates and returns a pytensor with the specified shape.
+         * @param shape the shape of the pytensor
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class S>
+        inline pytensor<T, N, L> pytensor<T, N, L>::from_shape(S&& shape)
+        {
+            detail::check_dims<shape_type>::run(shape.size());
+            auto shp = xtl::forward_sequence<shape_type, S>(shape);
+            return self_type(shp);
+        }
+        //@}
+
+        /**
+         * @name Copy semantic
+         */
+        //@{
+        /**
+         * The copy constructor.
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline pytensor<T, N, L>::pytensor(const self_type& rhs)
+            : base_type(), semantic_base(rhs)
+        {
+            init_tensor(rhs.shape(), rhs.strides());
+            std::copy(rhs.storage().cbegin(), rhs.storage().cend(), this->storage().begin());
+        }
+
+        /**
+         * The assignment operator.
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::operator=(const self_type& rhs) -> self_type&
+        {
+            self_type tmp(rhs);
+            *this = std::move(tmp);
+            return *this;
+        }
+        //@}
+
+        /**
+         * @name Extended copy semantic
+         */
+        //@{
+        /**
+         * The extended copy constructor.
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class E>
+        inline pytensor<T, N, L>::pytensor(const xexpression<E>& e)
+            : base_type()
+        {
+            shape_type shape = xtl::forward_sequence<shape_type, decltype(e.derived_cast().shape())>(e.derived_cast().shape());
+            strides_type strides;
+            detail::compute_strides_row_major(shape, strides);
+            init_tensor(shape, strides);
+            semantic_base::assign(e);
+        }
+
+        /**
+         * The extended assignment operator.
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class E>
+        inline auto pytensor<T, N, L>::operator=(const xexpression<E>& e) -> self_type&
+        {
+            return semantic_base::operator=(e);
+        }
+        //@}
+
+        template <class T, std::size_t N, layout_type L>
+        inline bool pytensor<T, N, L>::is_valid() const noexcept
+        {
+            return m_array.is_valid();
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::ndarray() noexcept -> ndarray_type&
+        {
+            return m_array;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::ndarray() const noexcept -> const ndarray_type&
+        {
+            return m_array;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline void pytensor<T, N, L>::reset_from_ndarray(ndarray_type array)
+        {
+            m_array = std::move(array);
+            init_from_ndarray();
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline void pytensor<T, N, L>::init_tensor(const shape_type& shape, const strides_type& strides)
+        {
+            // Compute total size
+            size_type total_size = 1;
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                total_size *= static_cast<size_type>(shape[i]);
+            }
+
+            // Allocate memory and create capsule owner
+            scalar_type* raw_ptr = nullptr;
+            ::nanobind::object owner;
+            if (total_size > 0)
+            {
+                raw_ptr = new scalar_type[total_size];
+                owner = ::nanobind::capsule(
+                    raw_ptr,
+                    [](void* p) noexcept { delete[] static_cast<scalar_type*>(p); });
+            }
+
+            // Create shape array for nanobind
+            std::array<size_t, N> nb_shape{};
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                nb_shape[i] = static_cast<size_t>(shape[i]);
+            }
+
+            // Create strides array for nanobind (in elements, not bytes)
+            std::array<int64_t, N> nb_strides{};
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                nb_strides[i] = static_cast<int64_t>(strides[i]);
+            }
+
+            // Determine order
+            char order = 'C';
+            if constexpr (L == layout_type::column_major)
+            {
+                order = 'F';
+            }
+
+            // Create nanobind ndarray
+            m_array = ndarray_type(
+                static_cast<pointer>(raw_ptr),
+                N,
+                N > 0 ? nb_shape.data() : nullptr,
+                owner.ptr(),
+                N > 0 ? nb_strides.data() : nullptr,
+                ::nanobind::dtype<ndarray_scalar_type>(),
+                ::nanobind::device::cpu::value,
+                0,
+                order);
+
+            // Initialize member variables
+            m_shape = shape;
+            m_strides = strides;
+            adapt_strides(m_shape, m_strides, m_backstrides);
+            m_storage = storage_type(raw_ptr, total_size);
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline void pytensor<T, N, L>::init_from_ndarray()
+        {
+            if (!m_array.is_valid())
+            {
+                m_shape.fill(0);
+                m_strides.fill(0);
+                m_backstrides.fill(0);
+                m_storage = storage_type(nullptr, 0);
+                return;
+            }
+
+            if (m_array.ndim() != N)
+            {
+                throw std::runtime_error("NumPy ndarray has incorrect number of dimensions");
+            }
+
+            // Copy shape
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                m_shape[i] = static_cast<typename shape_type::value_type>(m_array.shape(i));
+            }
+
+            // Copy strides (nanobind strides are in elements)
+            const int64_t* stride_ptr = m_array.stride_ptr();
+            if (stride_ptr != nullptr)
+            {
+                for (std::size_t i = 0; i < N; ++i)
+                {
+                    m_strides[i] = static_cast<typename strides_type::value_type>(stride_ptr[i]);
+                }
+            }
+            else
+            {
+                // Compute default strides
+                if constexpr (L == layout_type::column_major)
+                {
+                    detail::compute_strides_column_major(m_shape, m_strides);
+                }
+                else
+                {
+                    detail::compute_strides_row_major(m_shape, m_strides);
+                }
+            }
+
+            // Validate layout if not dynamic
+            if constexpr (L != layout_type::dynamic)
+            {
+                bool layout_ok = false;
+                if constexpr (L == layout_type::row_major)
+                {
+                    layout_ok = detail::is_row_major(m_strides, m_shape);
+                }
+                else
+                {
+                    layout_ok = detail::is_column_major(m_strides, m_shape);
+                }
+                if (!layout_ok)
+                {
+                    throw std::runtime_error("NumPy: passing container with bad strides for layout (is it a view?).");
+                }
+            }
+
+            adapt_strides(m_shape, m_strides, m_backstrides);
+
+            // Compute buffer size
+            size_type buffer_size = this->get_buffer_size();
+            m_storage = storage_type(m_array.data(), buffer_size);
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::shape_impl() noexcept -> inner_shape_type&
+        {
+            return m_shape;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::shape_impl() const noexcept -> const inner_shape_type&
+        {
+            return m_shape;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::strides_impl() noexcept -> inner_strides_type&
+        {
+            return m_strides;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::strides_impl() const noexcept -> const inner_strides_type&
+        {
+            return m_strides;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::backstrides_impl() noexcept -> inner_backstrides_type&
+        {
+            return m_backstrides;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::backstrides_impl() const noexcept -> const inner_backstrides_type&
+        {
+            return m_backstrides;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::storage_impl() noexcept -> storage_type&
+        {
+            return m_storage;
+        }
+
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::storage_impl() const noexcept -> const storage_type&
+        {
+            return m_storage;
+        }
+
     } // namespace nanobind
+
 } // namespace xt
 
+// xt:: specializations for pytensor
 namespace xt
 {
-    template <class T, std::size_t N, layout_type Layout>
-    struct xcontainer_inner_types<nanobind::pytensor<T, N, Layout>>
-    {
-        using tensor_type = nanobind::pytensor<T, N, Layout>;
-        using storage_type = typename tensor_type::buffer_type;
-        using reference = typename tensor_type::reference;
-        using const_reference = typename tensor_type::const_reference;
-        using size_type = typename tensor_type::size_type;
-        using shape_type = typename tensor_type::shape_type;
-        using strides_type = typename tensor_type::strides_type;
-        using backstrides_type = typename tensor_type::strides_type;
-        using inner_shape_type = shape_type;
-        using inner_strides_type = strides_type;
-        using inner_backstrides_type = backstrides_type;
-        using temporary_type = tensor_type;
-        static constexpr layout_type layout = Layout;
-    };
-
     template <class T>
     struct temporary_type_from_tag<nanobind::pytensor_expression_tag, T>
     {
@@ -893,12 +814,6 @@ namespace xt
     {
     };
 
-    template <class T, std::size_t N, layout_type Layout>
-    struct xiterable_inner_types<nanobind::pytensor<T, N, Layout>>
-        : xcontainer_iterable_types<nanobind::pytensor<T, N, Layout>>
-    {
-    };
-
     namespace detail
     {
         template <class T, std::size_t N, layout_type Layout>
@@ -920,14 +835,9 @@ namespace xt
     struct has_assign_conversion<From, nanobind::pytensor<T, N, Layout>> : std::false_type
     {
     };
-
-    template <class T, std::size_t N, layout_type Layout, class Indices>
-    inline auto index_view(nanobind::pytensor<T, N, Layout>& tensor, Indices& indices)
-    {
-        return nanobind::detail::pytensor_index_view<nanobind::pytensor<T, N, Layout>&, Indices, N>(tensor, indices);
-    }
 }
 
+// nanobind type casters
 NAMESPACE_BEGIN(NB_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
@@ -989,7 +899,7 @@ NAMESPACE_BEGIN(detail)
     private:
         static bool try_convert_sequence(PyObject* obj, tensor_type& result)
         {
-            if constexpr (tensor_type::rank == 0)
+            if constexpr (N == 0)
             {
                 try
                 {
@@ -1005,7 +915,7 @@ NAMESPACE_BEGIN(detail)
             }
             else
             {
-                std::array<size_t, tensor_type::rank> shape{};
+                std::array<size_t, N> shape{};
                 std::vector<scalar_type> values;
                 values.reserve(8);
 
@@ -1024,7 +934,7 @@ NAMESPACE_BEGIN(detail)
                 }
 
                 typename tensor_type::shape_type xt_shape{};
-                for (size_t axis = 0; axis < tensor_type::rank; ++axis)
+                for (size_t axis = 0; axis < N; ++axis)
                 {
                     xt_shape[axis] = static_cast<typename tensor_type::size_type>(shape[axis]);
                 }
@@ -1038,10 +948,10 @@ NAMESPACE_BEGIN(detail)
 
         static bool flatten_sequence(PyObject* obj,
                                      size_t axis,
-                                     std::array<size_t, tensor_type::rank>& shape,
+                                     std::array<size_t, N>& shape,
                                      std::vector<scalar_type>& values)
         {
-            if (axis == tensor_type::rank)
+            if (axis == N)
             {
                 try
                 {
@@ -1095,6 +1005,7 @@ NAMESPACE_BEGIN(detail)
         }
     };
 
+    // Type caster for xexpression<pytensor>
     template <class T, std::size_t N, xt::layout_type Layout>
     struct type_caster<xt::xexpression<xt::nanobind::pytensor<T, N, Layout>>>
         : type_caster<xt::nanobind::pytensor<T, N, Layout>>
@@ -1113,6 +1024,7 @@ NAMESPACE_BEGIN(detail)
         }
     };
 
+    // Type caster for xt::xtensor (copies data)
     template <class Tensor>
     class pytensor_xtensor_caster_impl
     {
@@ -1190,58 +1102,12 @@ NAMESPACE_BEGIN(detail)
                     {
                         return 'C';
                     }
-
-                    auto compute_expected = [](const std::array<size_t, rank>& extents,
-                                               bool reverse) {
-                        std::array<int64_t, rank> expected{};
-                        if constexpr (rank == 0)
-                        {
-                            return expected;
-                        }
-
-                        int64_t accumulator = 1;
-                        if (reverse)
-                        {
-                            for (std::ptrdiff_t axis = static_cast<std::ptrdiff_t>(rank) - 1; axis >= 0; --axis)
-                            {
-                                expected[static_cast<std::size_t>(axis)] = accumulator;
-                                accumulator *= static_cast<int64_t>(std::max<size_t>(extents[static_cast<std::size_t>(axis)], 1));
-                            }
-                        }
-                        else
-                        {
-                            for (std::size_t axis = 0; axis < rank; ++axis)
-                            {
-                                expected[axis] = accumulator;
-                                accumulator *= static_cast<int64_t>(std::max<size_t>(extents[axis], 1));
-                            }
-                        }
-                        return expected;
-                    };
-
-                    const auto expected_row = compute_expected(shape, true);
-                    const auto expected_col = compute_expected(shape, false);
-
-                    bool row_major = true;
-                    bool column_major = true;
-
-                    for (std::size_t axis = 0; axis < rank; ++axis)
-                    {
-                        if (stride_buffer[axis] != expected_row[axis])
-                        {
-                            row_major = false;
-                        }
-                        if (stride_buffer[axis] != expected_col[axis])
-                        {
-                            column_major = false;
-                        }
-                    }
-
-                    if (row_major)
+                    // Check if row major
+                    if (xt::nanobind::detail::is_row_major(stride_buffer, shape))
                     {
                         return 'C';
                     }
-                    if (column_major)
+                    if (xt::nanobind::detail::is_column_major(stride_buffer, shape))
                     {
                         return 'F';
                     }
@@ -1318,3 +1184,5 @@ NAMESPACE_BEGIN(detail)
 
 NAMESPACE_END(detail)
 NAMESPACE_END(NB_NAMESPACE)
+
+#endif
