@@ -32,6 +32,7 @@
 
 # Build directory
 build/
+build_nanobind/
 
 # Test build artefacts
 test/test_xtensor_python

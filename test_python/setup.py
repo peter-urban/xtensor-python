@@ -90,6 +90,10 @@ class BuildExt(build_ext):
         'msvc': ['/EHsc'],
         'unix': [],
     }
+    l_opts = {
+        'msvc': [],
+        'unix': ['-lstdc++'],
+    }
 
     if sys.platform == 'darwin':
         c_opts['unix'] += ['-stdlib=libc++', '-mmacosx-version-min=10.13']
@@ -97,6 +101,7 @@ class BuildExt(build_ext):
     def build_extensions(self):
         ct = self.compiler.compiler_type
         opts = self.c_opts.get(ct, [])
+        link_opts = self.l_opts.get(ct, [])
         if ct == 'unix':
             opts.append('-DVERSION_INFO="%s"' % self.distribution.get_version())
             opts.append(cpp_flag(self.compiler))
@@ -107,6 +112,7 @@ class BuildExt(build_ext):
             opts.append('/std:c++20')
         for ext in self.extensions:
             ext.extra_compile_args = opts
+            ext.extra_link_args = link_opts
         build_ext.build_extensions(self)
 
 setup(
