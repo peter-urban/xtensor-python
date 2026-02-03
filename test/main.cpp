@@ -15,9 +15,15 @@
 #include <pybind11/embed.h>
 
 #define FORCE_IMPORT_ARRAY
-#include "xtensor-python/pyarray.hpp"
+#include "xtensor-python/pybind11/pyarray.hpp"
 
 namespace py = pybind11;
+
+// Bring pybind11 types into xt namespace for tests
+namespace xt {
+    using pybind11::pyarray;
+    using pybind11::import_numpy;
+}
 
 int main(int argc, char* argv[])
 {

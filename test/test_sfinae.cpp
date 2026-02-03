@@ -10,13 +10,16 @@
 #include <limits>
 
 #include "gtest/gtest.h"
-#include "xtensor-python/pytensor.hpp"
-#include "xtensor-python/pyarray.hpp"
+#include "xtensor-python/pybind11/pytensor.hpp"
+#include "xtensor-python/pybind11/pyarray.hpp"
 #include "xtensor/containers/xarray.hpp"
 #include "xtensor/containers/xtensor.hpp"
 
 namespace xt
 {
+    // Bring pybind11 types into xt namespace for tests
+    using pybind11::pyarray;
+    using pybind11::pytensor;
     template <class E, std::enable_if_t<!xt::has_fixed_rank_t<E>::value, int> = 0>
     inline bool sfinae_has_fixed_rank(E&&)
     {

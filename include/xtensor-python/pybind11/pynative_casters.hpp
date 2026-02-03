@@ -7,8 +7,8 @@
 * The full license is in the file LICENSE, distributed with this software. *
 ****************************************************************************/
 
-#ifndef PYNATIVE_CASTERS_HPP
-#define PYNATIVE_CASTERS_HPP
+#ifndef XTENSOR_PYTHON_PYBIND11_PYNATIVE_CASTERS_HPP
+#define XTENSOR_PYTHON_PYBIND11_PYNATIVE_CASTERS_HPP
 
 #include "xtensor_type_caster_base.hpp"
 

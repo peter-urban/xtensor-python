@@ -9,7 +9,7 @@
 
 #include "gtest/gtest.h"
 
-#include "xtensor-python/pyarray.hpp"
+#include "xtensor-python/pybind11/pyarray.hpp"
 
 #include "xtensor/containers/xarray.hpp"
 #include "xtensor/views/xview.hpp"
@@ -18,6 +18,8 @@
 
 namespace xt
 {
+    // Bring pybind11 types into xt namespace for tests
+    using pybind11::pyarray;
     using container_type = std::vector<npy_intp>;
 
     template <class T>

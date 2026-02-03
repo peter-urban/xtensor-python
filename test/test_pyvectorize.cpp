@@ -9,13 +9,18 @@
 
 #include "gtest/gtest.h"
 #include "test_common.hpp"
-#include "xtensor-python/pytensor.hpp"
-#include "xtensor-python/pyvectorize.hpp"
+#include "xtensor-python/pybind11/pytensor.hpp"
+#include "xtensor-python/pybind11/pyarray.hpp"
+#include "xtensor-python/pybind11/pyvectorize.hpp"
 #include "pybind11/pybind11.h"
 #include "pybind11/numpy.h"
 
 namespace xt
 {
+    // Bring pybind11 types into xt namespace for tests
+    using pybind11::pyarray;
+    using pybind11::pytensor;
+    using pybind11::pyvectorize;
 
     double f1(double a, double b)
     {

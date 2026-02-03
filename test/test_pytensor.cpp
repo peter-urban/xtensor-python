@@ -9,7 +9,7 @@
 
 #include "gtest/gtest.h"
 
-#include "xtensor-python/pytensor.hpp"
+#include "xtensor-python/pybind11/pytensor.hpp"
 
 #include "xtensor/containers/xtensor.hpp"
 #include "xtensor/views/xview.hpp"
@@ -18,6 +18,8 @@
 
 namespace xt
 {
+    // Bring pybind11 types into xt namespace for tests
+    using pybind11::pytensor;
     using container_type = std::array<npy_intp, 3>;
 
     TEST(pytensor, initializer_constructor)

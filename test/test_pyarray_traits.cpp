@@ -9,12 +9,14 @@
 
 #include "gtest/gtest.h"
 
-#include "xtensor-python/pyarray.hpp"
+#include "xtensor-python/pybind11/pyarray.hpp"
 
 
 
 namespace xt
 {
+    // Bring pybind11 types into xt namespace for tests
+    using pybind11::pyarray;
     namespace testing
     {
         class pyarray_traits: public ::testing::Test

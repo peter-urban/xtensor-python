@@ -72,15 +72,15 @@ message(STATUS "Found numpy: ${NUMPY_INCLUDE_DIRS}")
 # =====
 
 set(XTENSOR_PYTHON_HEADERS
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pyarray.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pyarray_backstrides.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pycontainer.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pynative_casters.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pystrides_adaptor.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pytensor.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pyvectorize.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/detail/pyarray_backstrides.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/detail/pystrides_adaptor.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pyarray.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pycontainer.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pynative_casters.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pytensor.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pyvectorize.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/xtensor_type_caster_base.hpp
         ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/xtensor_python_config.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/xtensor_type_caster_base.hpp
         )
 
 add_library(xtensor-python INTERFACE)
