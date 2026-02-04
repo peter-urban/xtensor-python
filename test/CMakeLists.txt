@@ -108,10 +108,11 @@ if(XTENSOR_PYTHON_HAS_NANOBIND)
     # Build nanobind-static library (provides include directories)
     nanobind_build_library(nanobind-static)
     
-    # For now, only pytensor is implemented for nanobind
+    # nanobind tests - pytensor and pyarray
     set(XTENSOR_PYTHON_NANOBIND_TESTS
         main.cpp
         test_pytensor.cpp
+        test_pyarray.cpp
     )
 
     add_executable(test_xtensor_python_nanobind ${XTENSOR_PYTHON_NANOBIND_TESTS} ${XTENSOR_PYTHON_HEADERS})

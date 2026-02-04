@@ -35,6 +35,7 @@ namespace xt
         namespace detail
         {
             // Layout detection utilities (can be moved to shared header later)
+            // These handle unit dimensions (size=1) which may have stride=0 from compute_strides
             template <class Strides, class Shape>
             inline bool is_row_major(const Strides& strides, const Shape& shape)
             {
@@ -48,11 +49,23 @@ namespace xt
                 auto expected = static_cast<std::make_signed_t<size_type>>(1);
                 for (std::ptrdiff_t axis = static_cast<std::ptrdiff_t>(rank) - 1; axis >= 0; --axis)
                 {
-                    if (static_cast<std::make_signed_t<size_type>>(strides[static_cast<size_type>(axis)]) != expected)
+                    auto axis_idx = static_cast<size_type>(axis);
+                    auto stride_val = static_cast<std::make_signed_t<size_type>>(strides[axis_idx]);
+                    auto shape_val = static_cast<std::make_signed_t<size_type>>(shape[axis_idx]);
+                    
+                    // For unit dimensions, accept either expected stride or 0
+                    if (shape_val == 1)
+                    {
+                        if (stride_val != expected && stride_val != 0)
+                        {
+                            return false;
+                        }
+                    }
+                    else if (stride_val != expected)
                     {
                         return false;
                     }
-                    expected *= static_cast<std::make_signed_t<size_type>>(shape[static_cast<size_type>(axis)]);
+                    expected *= shape_val;
                 }
                 return true;
             }
@@ -70,11 +83,22 @@ namespace xt
                 auto expected = static_cast<std::make_signed_t<size_type>>(1);
                 for (size_type axis = 0; axis < rank; ++axis)
                 {
-                    if (static_cast<std::make_signed_t<size_type>>(strides[axis]) != expected)
+                    auto stride_val = static_cast<std::make_signed_t<size_type>>(strides[axis]);
+                    auto shape_val = static_cast<std::make_signed_t<size_type>>(shape[axis]);
+                    
+                    // For unit dimensions, accept either expected stride or 0
+                    if (shape_val == 1)
+                    {
+                        if (stride_val != expected && stride_val != 0)
+                        {
+                            return false;
+                        }
+                    }
+                    else if (stride_val != expected)
                     {
                         return false;
                     }
-                    expected *= static_cast<std::make_signed_t<size_type>>(shape[axis]);
+                    expected *= shape_val;
                 }
                 return true;
             }
