@@ -375,7 +375,7 @@ NANOBIND_SKIP_FEATURES = {
     # 'xscalar',          # pytensor<T, 0> scalar support - NOW IMPLEMENTED
     # 'bad_argument_call',# simple_array/simple_tensor - NOW IMPLEMENTED
     # 'diff_shape_overload',# pytensor dimension overloads - NOW IMPLEMENTED
-    'native_casters',     # strided_view, adapters - requires view type casters
+    # 'native_casters',   # strided_view, adapters - NOW IMPLEMENTED
     # 'class_C',          # C class with properties - NOW IMPLEMENTED
 }
 

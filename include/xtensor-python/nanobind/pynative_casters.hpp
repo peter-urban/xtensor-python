@@ -34,6 +34,24 @@ NAMESPACE_BEGIN(detail)
     {
     };
 
+    // Type caster for casting xt::xstrided_view to ndarray (output-only)
+    template <class CT, class S, xt::layout_type L, class FST>
+    struct type_caster<xt::xstrided_view<CT, S, L, FST>> : xstrided_view_type_caster<CT, S, L, FST>
+    {
+    };
+
+    // Type caster for casting xt::xarray_adaptor to ndarray (output-only)
+    template <class EC, xt::layout_type L, class SC, class Tag>
+    struct type_caster<xt::xarray_adaptor<EC, L, SC, Tag>> : xarray_adaptor_type_caster<EC, L, SC, Tag>
+    {
+    };
+
+    // Type caster for casting xt::xtensor_adaptor to ndarray (output-only)
+    template <class EC, std::size_t N, xt::layout_type L, class Tag>
+    struct type_caster<xt::xtensor_adaptor<EC, N, L, Tag>> : xtensor_adaptor_type_caster<EC, N, L, Tag>
+    {
+    };
+
 NAMESPACE_END(detail)
 NAMESPACE_END(NB_NAMESPACE)
 
