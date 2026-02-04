@@ -363,20 +363,13 @@ class AttributeTest(TestCase):
 
 
 # Nanobind tests - only run if nanobind extension is available
-# Features not yet implemented in nanobind backend
+# Features not supported in nanobind backend due to DLPack limitations
 NANOBIND_SKIP_FEATURES = {
-    # 'example3',         # Uses transpose with native casters - NOW IMPLEMENTED
-    # 'vectorize',        # pyvectorize - NOW IMPLEMENTED
-    # 'complex_overload', # Overload resolution - NOW IMPLEMENTED
-    # 'int_overload',     # Overload resolution - NOW IMPLEMENTED
-    'dtype',              # Custom dtype support (PYBIND11_NUMPY_DTYPE) - Not available in nanobind
-    'char_array',         # char array support - Not available in nanobind
-    # 'col_row_major',    # Layout-specific pytensor - NOW IMPLEMENTED
-    # 'xscalar',          # pytensor<T, 0> scalar support - NOW IMPLEMENTED
-    # 'bad_argument_call',# simple_array/simple_tensor - NOW IMPLEMENTED
-    # 'diff_shape_overload',# pytensor dimension overloads - NOW IMPLEMENTED
-    # 'native_casters',   # strided_view, adapters - NOW IMPLEMENTED
-    # 'class_C',          # C class with properties - NOW IMPLEMENTED
+    # DLPack (used by nanobind) only supports standard numeric types.
+    # Structured dtypes and fixed-size character arrays are numpy-specific
+    # features that cannot be represented in DLPack's type system.
+    'dtype': "Custom struct dtype (PYBIND11_NUMPY_DTYPE) - DLPack only supports standard numeric types",
+    'char_array': "Fixed-size char array dtype (char[N]) - DLPack only supports standard numeric types",
 }
 
 
@@ -385,7 +378,8 @@ def skip_nanobind(feature):
     def decorator(func):
         def wrapper(self, *args, **kwargs):
             if feature in NANOBIND_SKIP_FEATURES:
-                self.skipTest(f"{feature} not implemented for nanobind backend")
+                reason = NANOBIND_SKIP_FEATURES[feature]
+                self.skipTest(f"nanobind limitation: {reason}")
             return func(self, *args, **kwargs)
         wrapper.__name__ = func.__name__
         return wrapper
@@ -412,7 +406,6 @@ class XtensorTestNanobind(TestCase):
         y = self.xt.example2(x)
         np.testing.assert_allclose(y, res, 1e-12)
 
-    @skip_nanobind('example3')
     def test_example3(self):
         x = np.arange(2 * 3).reshape(2, 3)
         xc = np.asfortranarray(x)
@@ -472,7 +465,6 @@ class XtensorTestNanobind(TestCase):
         z = self.xt.array_division(x, y)
         np.testing.assert_allclose(z, res, 1e-12)
 
-    @skip_nanobind('vectorize')
     def test_vectorize(self):
         x1 = np.array([[0, 1], [2, 3]])
         x2 = np.array([0, 1])
@@ -485,14 +477,12 @@ class XtensorTestNanobind(TestCase):
         y = self.xt.readme_example1(v)
         np.testing.assert_allclose(y, 1.2853996391883833, 1e-12)
 
-    @skip_nanobind('complex_overload')
     def test_complex_overload_reg(self):
         a = 23.23
         c = 2.0 + 3.1j
         self.assertEqual(self.xt.complex_overload_reg(a), a)
         self.assertEqual(self.xt.complex_overload_reg(c), c)
 
-    @skip_nanobind('complex_overload')
     def test_complex_overload(self):
         a = np.random.rand(3, 3)
         b = np.random.rand(3, 3)
@@ -504,7 +494,6 @@ class XtensorTestNanobind(TestCase):
         self.assertEqual(x.dtype, b.dtype)
         np.testing.assert_allclose(x, b)
 
-    @skip_nanobind('vectorize')
     def test_readme_example2(self):
         x = np.arange(15, dtype=float).reshape(3, 5)
         y = np.array([1, 2, 3, 4, 5], dtype=float)  # Convert to numpy array for nanobind
@@ -514,7 +503,6 @@ class XtensorTestNanobind(TestCase):
              [-1.499227,  0.136731,  1.646979,  1.643002,  0.128456],
              [-1.084323, -0.583843,  0.45342 ,  1.073811,  0.706945]], 1e-5)
 
-    @skip_nanobind('vectorize')
     def test_rect_to_polar(self):
         x = np.ones(10, dtype=complex)
         z = self.xt.rect_to_polar(x[::2])
@@ -527,7 +515,6 @@ class XtensorTestNanobind(TestCase):
         self.assertFalse(self.xt.compare_shapes(x, y))
         self.assertTrue(self.xt.compare_shapes(x, z))
 
-    @skip_nanobind('int_overload')
     def test_int_overload(self):
         for dtype in [np.uint8, np.int8, np.uint16, np.int16, np.uint32, np.int32, np.uint64, np.int64]:
             b = self.xt.int_overload(np.ones((10), dtype))
@@ -545,27 +532,22 @@ class XtensorTestNanobind(TestCase):
         self.xt.char_array(var)
         self.assertEqual(var[2], b'c++')
 
-    @skip_nanobind('col_row_major')
     def test_col_row_major(self):
         var = np.arange(50, dtype=float).reshape(2, 5, 5)
         self.xt.row_major_tensor(var)
 
-    @skip_nanobind('xscalar')
     def test_xscalar(self):
         var = np.arange(50, dtype=int)
         self.assertTrue(np.sum(var) == self.xt.xscalar(var))
 
-    @skip_nanobind('bad_argument_call')
     def test_bad_argument_call(self):
         with self.assertRaises(TypeError):
             self.xt.simple_array("foo")
 
-    @skip_nanobind('diff_shape_overload')
     def test_diff_shape_overload(self):
         self.assertEqual(1, self.xt.diff_shape_overload(np.ones(2)))
         self.assertEqual(2, self.xt.diff_shape_overload(np.ones((2, 2))))
 
-    @skip_nanobind('native_casters')
     def test_native_casters(self):
         obj = self.xt.test_native_casters()
         a = obj.get_strided_view()
@@ -577,8 +559,6 @@ class AttributeTestNanobind(TestCase):
     """Attribute tests for nanobind backend."""
 
     def setUp(self):
-        if 'class_C' in NANOBIND_SKIP_FEATURES:
-            self.skipTest("class_C not implemented for nanobind backend")
         self.c = xt_nanobind.C()
 
     def test_copy(self):

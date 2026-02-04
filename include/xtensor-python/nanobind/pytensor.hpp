@@ -1012,6 +1012,12 @@ namespace xt
         {
             using type = nanobind_expression_base;
         };
+
+        template <class CT, class S, layout_type L, class FST>
+        struct xstrided_view_base_impl<nanobind::pytensor_expression_tag, CT, S, L, FST>
+        {
+            using type = nanobind_expression_base;
+        };
     }
 
     template <>

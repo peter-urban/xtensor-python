@@ -35,13 +35,16 @@
 #elif defined(XTENSOR_PYTHON_BACKEND_NANOBIND)
     #include "xtensor-python/nanobind/pytensor.hpp"
     #define BACKEND_NAME nanobind
-    // nanobind pytensor has different constructor signatures
-    #define BACKEND_HAS_INITIALIZER_CONSTRUCTOR 0
+    // nanobind pytensor has initializer constructor
+    #define BACKEND_HAS_INITIALIZER_CONSTRUCTOR 1
+    // nanobind pytensor has different constructor signatures (size_t strides, not ptrdiff_t)
     #define BACKEND_HAS_STRIDED_CONSTRUCTOR 0
-    #define BACKEND_HAS_LAYOUT_CONSTRUCTOR 0
+    // nanobind pytensor supports layout_type parameter in constructor
+    #define BACKEND_HAS_LAYOUT_CONSTRUCTOR 1
     #define BACKEND_HAS_STRIDED_VALUED_CONSTRUCTOR 0
     #define BACKEND_HAS_INPLACE_OVERLOAD_TEST 0
-    // nanobind doesn't have full xtensor extension integration yet
+    // nanobind has xtensor extension integration but not resize-based tests
+    // (test_access/test_transpose etc. call resize with layout which nanobind doesn't support)
     #define BACKEND_HAS_FULL_XTENSOR_INTEGRATION 0
     // nanobind xbuffer_storage is not resizable
     #define BACKEND_HAS_RESIZE 0
