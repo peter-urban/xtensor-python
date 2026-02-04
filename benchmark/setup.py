@@ -37,6 +37,8 @@ ext_modules = [
         'benchmark_xtensor_python',
         ['main.cpp'],
         include_dirs=[
+            # Path to xtensor-python headers
+            '../include/',
             # Path to pybind11 headers
             get_pybind_include(),
             get_pybind_include(user=True),
@@ -45,7 +47,8 @@ ext_modules = [
             os.path.join(sys.prefix, 'include'),
             os.path.join(sys.prefix, 'Library', 'include')
         ],
-        language='c++'
+        language='c++',
+        extra_link_args=['-lstdc++'] if sys.platform != 'win32' else [],
     ),
 ]
 
@@ -65,24 +68,24 @@ def has_flag(compiler, flagname):
 
 
 def cpp_flag(compiler):
-    """Return the -std=c++14 compiler flag  and errors when the flag is
+    """Return the -std=c++20 compiler flag and errors when the flag is
     no available.
     """
-    if has_flag(compiler, '-std=c++14'):
-        return '-std=c++14'
+    if has_flag(compiler, '-std=c++20'):
+        return '-std=c++20'
     else:
-        raise RuntimeError('C++14 support is required by xtensor!')
+        raise RuntimeError('C++20 support is required by xtensor!')
 
 
 class BuildExt(build_ext):
     """A custom build extension for adding compiler-specific options."""
     c_opts = {
-        'msvc': ['/EHsc'],
+        'msvc': ['/EHsc', '/std:c++20'],
         'unix': [],
     }
 
     if sys.platform == 'darwin':
-        c_opts['unix'] += ['-stdlib=libc++', '-mmacosx-version-min=10.7']
+        c_opts['unix'] += ['-stdlib=libc++', '-mmacosx-version-min=10.13']
 
     def build_extensions(self):
         ct = self.compiler.compiler_type
@@ -90,10 +93,14 @@ class BuildExt(build_ext):
         if ct == 'unix':
             opts.append('-DVERSION_INFO="%s"' % self.distribution.get_version())
             opts.append(cpp_flag(self.compiler))
+            opts.append('-O3')
+            opts.append('-DXTENSOR_USE_XSIMD')  # Enable SIMD vectorization
             if has_flag(self.compiler, '-fvisibility=hidden'):
                 opts.append('-fvisibility=hidden')
         elif ct == 'msvc':
             opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
+            opts.append('/O2')
+            opts.append('/DXTENSOR_USE_XSIMD')  # Enable SIMD vectorization
         for ext in self.extensions:
             ext.extra_compile_args = opts
         build_ext.build_extensions(self)

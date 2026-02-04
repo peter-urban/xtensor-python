@@ -169,10 +169,11 @@ namespace xt
             inline constexpr bool is_pyarray_shape_type_v = is_pyarray_shape_type<S, PyT>::value;
 
             // ndarray type helper for pyarray (dynamic dimensions)
+            // Default (including dynamic) uses row_major (c_contig) since that's NumPy's default
             template <class Scalar, layout_type Layout>
             struct pyarray_ndarray_type_helper
             {
-                using type = ::nanobind::ndarray<Scalar, ::nanobind::numpy, ::nanobind::any_contig>;
+                using type = ::nanobind::ndarray<Scalar, ::nanobind::numpy, ::nanobind::c_contig>;
             };
 
             template <class Scalar>

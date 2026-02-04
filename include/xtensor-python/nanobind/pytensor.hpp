@@ -156,14 +156,11 @@ namespace xt
             inline constexpr bool is_shape_type_v = is_shape_type<S, PyT>::value;
 
             // ndarray type helper for different layouts
+            // Default (including dynamic) uses row_major (c_contig) since that's NumPy's default
             template <class Scalar, std::size_t N, layout_type Layout>
             struct ndarray_type_helper
             {
-                using type = ::nanobind::ndarray<
-                    Scalar,
-                    ::nanobind::ndim<N>,
-                    ::nanobind::numpy,
-                    ::nanobind::any_contig>;
+                using type = ::nanobind::ndarray<Scalar, ::nanobind::ndim<N>, ::nanobind::numpy, ::nanobind::c_contig>;
             };
 
             template <class Scalar, std::size_t N>

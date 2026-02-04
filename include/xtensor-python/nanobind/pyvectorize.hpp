@@ -12,19 +12,13 @@
 
 #include <type_traits>
 
-#include "pytensor.hpp"
+#include "pyarray.hpp"
 #include "xtensor/core/xvectorize.hpp"
-#include "xtensor/containers/xarray.hpp"
 
 namespace xt
 {
     namespace nanobind
     {
-        // Forward declare pyarray-like type for vectorize
-        // For nanobind we use xarray with dynamic rank since we don't have pyarray
-        template <class T>
-        using pyarray_like = xt::xarray<T>;
-
         template <class Func, class R, class... Args>
         struct pyvectorizer
         {
@@ -36,9 +30,9 @@ namespace xt
             {
             }
 
-            inline pyarray_like<R> operator()(const pyarray_like<Args>&... args) const
+            inline pyarray<R> operator()(const pyarray<Args>&... args) const
             {
-                pyarray_like<R> res = m_vectorizer(args...);
+                pyarray<R> res = m_vectorizer(args...);
                 return res;
             }
         };
