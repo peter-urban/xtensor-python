@@ -1,0 +1,73 @@
+/***************************************************************************
+* Copyright (c) Wolf Vollprecht, Johan Mabille and Sylvain Corlay          *
+* Copyright (c) QuantStack                                                 *
+*                                                                          *
+* Distributed under the terms of the BSD 3-Clause License.                 *
+*                                                                          *
+* The full license is in the file LICENSE, distributed with this software. *
+****************************************************************************/
+
+#ifndef XTENSOR_PYTHON_NANOBIND_PYVECTORIZE_HPP
+#define XTENSOR_PYTHON_NANOBIND_PYVECTORIZE_HPP
+
+#include <type_traits>
+
+#include "pytensor.hpp"
+#include "xtensor/core/xvectorize.hpp"
+#include "xtensor/containers/xarray.hpp"
+
+namespace xt
+{
+    namespace nanobind
+    {
+        // Forward declare pyarray-like type for vectorize
+        // For nanobind we use xarray with dynamic rank since we don't have pyarray
+        template <class T>
+        using pyarray_like = xt::xarray<T>;
+
+        template <class Func, class R, class... Args>
+        struct pyvectorizer
+        {
+            xvectorizer<Func, R> m_vectorizer;
+
+            template <class F, class = std::enable_if_t<!std::is_same<std::decay_t<F>, pyvectorizer>::value>>
+            pyvectorizer(F&& func)
+                : m_vectorizer(std::forward<F>(func))
+            {
+            }
+
+            inline pyarray_like<R> operator()(const pyarray_like<Args>&... args) const
+            {
+                pyarray_like<R> res = m_vectorizer(args...);
+                return res;
+            }
+        };
+
+        /**
+         * @brief Create numpy universal function from scalar function.
+         */
+        template <class R, class... Args>
+        inline pyvectorizer<R (*)(Args...), R, Args...> pyvectorize(R (*f)(Args...))
+        {
+            return pyvectorizer<R (*)(Args...), R, Args...>(f);
+        }
+
+        /// @cond DOXYGEN_INCLUDE_OVERLOADS
+        template <class F, class R, class... Args>
+        inline pyvectorizer<F, R, Args...> pyvectorize(F&& f, R (*)(Args...))
+        {
+            return pyvectorizer<F, R, Args...>(std::forward<F>(f));
+        }
+
+        template <class F>
+        inline auto pyvectorize(F&& f) -> decltype(::xt::nanobind::pyvectorize(std::forward<F>(f), (::xt::detail::get_function_type<F>*)nullptr))
+        {
+            return ::xt::nanobind::pyvectorize(std::forward<F>(f), (::xt::detail::get_function_type<F>*)nullptr);
+        }
+        /// @endcond
+
+    } // namespace nanobind
+
+} // namespace xt
+
+#endif

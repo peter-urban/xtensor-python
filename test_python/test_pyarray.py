@@ -366,17 +366,17 @@ class AttributeTest(TestCase):
 # Features not yet implemented in nanobind backend
 NANOBIND_SKIP_FEATURES = {
     # 'example3',         # Uses transpose with native casters - NOW IMPLEMENTED
-    'vectorize',          # pyvectorize not implemented for nanobind
-    'complex_overload',   # Overload resolution
-    'int_overload',       # Overload resolution
-    'dtype',              # Custom dtype support (PYBIND11_NUMPY_DTYPE)
-    'char_array',         # char array support
+    # 'vectorize',        # pyvectorize - NOW IMPLEMENTED
+    # 'complex_overload', # Overload resolution - NOW IMPLEMENTED
+    # 'int_overload',     # Overload resolution - NOW IMPLEMENTED
+    'dtype',              # Custom dtype support (PYBIND11_NUMPY_DTYPE) - Not available in nanobind
+    'char_array',         # char array support - Not available in nanobind
     # 'col_row_major',    # Layout-specific pytensor - NOW IMPLEMENTED
     # 'xscalar',          # pytensor<T, 0> scalar support - NOW IMPLEMENTED
-    'bad_argument_call',  # simple_array/simple_tensor
-    'diff_shape_overload',# pytensor dimension overloads
-    'native_casters',     # strided_view, adapters, keep_alive
-    'class_C',            # C class with properties
+    # 'bad_argument_call',# simple_array/simple_tensor - NOW IMPLEMENTED
+    # 'diff_shape_overload',# pytensor dimension overloads - NOW IMPLEMENTED
+    'native_casters',     # strided_view, adapters - requires view type casters
+    # 'class_C',          # C class with properties - NOW IMPLEMENTED
 }
 
 
@@ -506,8 +506,8 @@ class XtensorTestNanobind(TestCase):
 
     @skip_nanobind('vectorize')
     def test_readme_example2(self):
-        x = np.arange(15).reshape(3, 5)
-        y = [1, 2, 3, 4, 5]
+        x = np.arange(15, dtype=float).reshape(3, 5)
+        y = np.array([1, 2, 3, 4, 5], dtype=float)  # Convert to numpy array for nanobind
         z = self.xt.readme_example2(x, y)
         np.testing.assert_allclose(z,
             [[-0.540302,  1.257618,  1.89929 ,  0.794764, -1.040465],
