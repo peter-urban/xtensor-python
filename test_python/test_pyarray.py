@@ -365,14 +365,14 @@ class AttributeTest(TestCase):
 # Nanobind tests - only run if nanobind extension is available
 # Features not yet implemented in nanobind backend
 NANOBIND_SKIP_FEATURES = {
-    'example3',           # Uses transpose with pyarray
+    # 'example3',         # Uses transpose with native casters - NOW IMPLEMENTED
     'vectorize',          # pyvectorize not implemented for nanobind
     'complex_overload',   # Overload resolution
     'int_overload',       # Overload resolution
     'dtype',              # Custom dtype support (PYBIND11_NUMPY_DTYPE)
     'char_array',         # char array support
-    'col_row_major',      # Layout-specific pytensor
-    'xscalar',            # pytensor<T, 0> scalar support
+    # 'col_row_major',    # Layout-specific pytensor - NOW IMPLEMENTED
+    # 'xscalar',          # pytensor<T, 0> scalar support - NOW IMPLEMENTED
     'bad_argument_call',  # simple_array/simple_tensor
     'diff_shape_overload',# pytensor dimension overloads
     'native_casters',     # strided_view, adapters, keep_alive

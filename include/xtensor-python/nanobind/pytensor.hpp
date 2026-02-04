@@ -89,6 +89,7 @@
 #include "xtensor/reducers/xreducer.hpp"
 
 #include "pycontainer.hpp"
+#include "pynative_casters.hpp"
 #include "../xtensor_python_config.hpp"
 
 // Forward declarations
@@ -279,6 +280,11 @@ namespace xt
             // nanobind-specific constructors
             explicit pytensor(ndarray_type array);
 
+            // xtensor container conversion (adopts ownership of data)
+            template <class EC, layout_type TensorLayout, class Tag,
+                      std::enable_if_t<!std::is_const_v<T>, int> = 0>
+            pytensor(xt::xtensor_container<EC, N, TensorLayout, Tag> tensor);
+
             template <class S = shape_type>
             static pytensor from_shape(S&& shape);
 
@@ -296,8 +302,17 @@ namespace xt
             template <class E>
             self_type& operator=(const xexpression<E>& e);
 
+            // xtensor container assignment (adopts ownership of data)
+            template <class EC, layout_type TensorLayout, class Tag,
+                      std::enable_if_t<!std::is_const_v<T>, int> = 0>
+            self_type& operator=(xt::xtensor_container<EC, N, TensorLayout, Tag> tensor);
+
             using base_type::begin;
             using base_type::end;
+
+            // Static validation methods (pybind11 interface compatibility)
+            static self_type ensure(::nanobind::handle h);
+            static bool check_(::nanobind::handle h);
 
             // Use semantic_base operators to avoid ambiguity
             using semantic_base::operator+=;
@@ -325,6 +340,10 @@ namespace xt
 
             void init_tensor(const shape_type& shape, const strides_type& strides);
             void init_from_ndarray();
+
+            // Helper to adopt an xtensor_container's storage
+            template <class XTensor>
+            void adopt_xtensor_container(std::unique_ptr<XTensor> owned_tensor);
 
             inner_shape_type& shape_impl() noexcept;
             const inner_shape_type& shape_impl() const noexcept;
@@ -476,6 +495,20 @@ namespace xt
         }
 
         /**
+         * Constructs a pytensor by adopting an xtensor_container's storage.
+         * The xtensor's data is moved into this pytensor and managed via a capsule.
+         * @param tensor the xtensor_container to adopt
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class EC, layout_type TensorLayout, class Tag, std::enable_if_t<!std::is_const_v<T>, int>>
+        inline pytensor<T, N, L>::pytensor(xt::xtensor_container<EC, N, TensorLayout, Tag> tensor)
+            : base_type()
+        {
+            adopt_xtensor_container(
+                std::make_unique<xt::xtensor_container<EC, N, TensorLayout, Tag>>(std::move(tensor)));
+        }
+
+        /**
          * Allocates and returns a pytensor with the specified shape.
          * @param shape the shape of the pytensor
          */
@@ -544,7 +577,79 @@ namespace xt
         {
             return semantic_base::operator=(e);
         }
+
+        /**
+         * Assigns an xtensor_container by adopting its storage.
+         * The xtensor's data is moved into this pytensor and managed via a capsule.
+         * @param tensor the xtensor_container to adopt
+         * @return reference to this pytensor
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class EC, layout_type TensorLayout, class Tag, std::enable_if_t<!std::is_const_v<T>, int>>
+        inline auto pytensor<T, N, L>::operator=(xt::xtensor_container<EC, N, TensorLayout, Tag> tensor) -> self_type&
+        {
+            adopt_xtensor_container(
+                std::make_unique<xt::xtensor_container<EC, N, TensorLayout, Tag>>(std::move(tensor)));
+            return *this;
+        }
         //@}
+
+        /**
+         * Attempts to create a pytensor from a Python handle.
+         * If the conversion fails, returns an invalid pytensor (is_valid() == false).
+         * @param h the Python handle to convert
+         * @return a pytensor wrapping the handle, or an invalid pytensor on failure
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline auto pytensor<T, N, L>::ensure(::nanobind::handle h) -> self_type
+        {
+            if (!h.is_valid())
+            {
+                return self_type();
+            }
+
+            try
+            {
+                // Try to cast using nanobind's ndarray caster
+                ::nanobind::detail::make_caster<ndarray_type> caster;
+                if (caster.from_python(h, 0, nullptr))
+                {
+                    self_type result;
+                    result.reset_from_ndarray(std::move(caster.value));
+                    return result;
+                }
+            }
+            catch (...)
+            {
+                // Fall through to return invalid pytensor
+            }
+
+            return self_type();
+        }
+
+        /**
+         * Checks if a Python handle can be converted to this pytensor type.
+         * @param h the Python handle to check
+         * @return true if the handle can be converted, false otherwise
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline bool pytensor<T, N, L>::check_(::nanobind::handle h)
+        {
+            if (!h.is_valid())
+            {
+                return false;
+            }
+
+            try
+            {
+                ::nanobind::detail::make_caster<ndarray_type> caster;
+                return caster.from_python(h, 0, nullptr);
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
 
         template <class T, std::size_t N, layout_type L>
         inline bool pytensor<T, N, L>::is_valid() const noexcept
@@ -702,6 +807,107 @@ namespace xt
             m_storage = storage_type(m_array.data(), buffer_size);
         }
 
+        /**
+         * Adopts an xtensor_container's storage into this pytensor.
+         * The xtensor is moved into a capsule for memory management.
+         * @tparam XTensor the xtensor_container type
+         * @param owned_tensor unique_ptr to the xtensor to adopt
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class XTensor>
+        inline void pytensor<T, N, L>::adopt_xtensor_container(std::unique_ptr<XTensor> owned_tensor)
+        {
+            static_assert(!std::is_const_v<T>, "pytensor::adopt_xtensor_container requires mutable tensor");
+            static_assert(XTensor::rank == N, "xtensor rank mismatch for pytensor adoption");
+
+            using xtensor_value_type = typename XTensor::value_type;
+            static_assert(
+                std::is_same_v<std::remove_const_t<xtensor_value_type>, scalar_type>,
+                "xtensor value_type mismatch for pytensor adoption");
+
+            auto* raw_tensor = owned_tensor.get();
+
+            // Extract shape from xtensor
+            std::array<size_t, N> nb_shape{};
+            if constexpr (N > 0)
+            {
+                const auto& xt_shape = raw_tensor->shape();
+                for (std::size_t axis = 0; axis < N; ++axis)
+                {
+                    nb_shape[axis] = static_cast<size_t>(xt_shape[axis]);
+                }
+            }
+
+            // Extract strides from xtensor
+            std::array<int64_t, N> nb_strides{};
+            if constexpr (N > 0)
+            {
+                const auto& xt_strides = raw_tensor->strides();
+                for (std::size_t axis = 0; axis < N; ++axis)
+                {
+                    nb_strides[axis] = static_cast<int64_t>(xt_strides[axis]);
+                }
+            }
+
+            // Verify xtensor is contiguous
+            const bool xtensor_row_major = detail::is_row_major(nb_strides, nb_shape);
+            const bool xtensor_column_major = detail::is_column_major(nb_strides, nb_shape);
+
+            if (!xtensor_row_major && !xtensor_column_major)
+            {
+                throw std::runtime_error("pytensor requires contiguous xtensor to adopt storage");
+            }
+
+            // Verify layout compatibility
+            if constexpr (L == layout_type::row_major)
+            {
+                if (!xtensor_row_major)
+                {
+                    throw std::runtime_error("Expected row-major xtensor for pytensor row-major layout");
+                }
+            }
+            else if constexpr (L == layout_type::column_major)
+            {
+                if (!xtensor_column_major)
+                {
+                    throw std::runtime_error("Expected column-major xtensor for pytensor column-major layout");
+                }
+            }
+
+            // Determine order for nanobind
+            char order = 'C';
+            if constexpr (L == layout_type::column_major)
+            {
+                order = 'F';
+            }
+            else if constexpr (L == layout_type::dynamic)
+            {
+                order = xtensor_column_major ? 'F' : 'C';
+            }
+
+            // Create capsule to manage xtensor lifetime
+            ::nanobind::object owner = ::nanobind::capsule(
+                raw_tensor,
+                [](void* raw) noexcept { delete static_cast<XTensor*>(raw); });
+
+            owned_tensor.release();
+
+            // Create nanobind ndarray
+            m_array = ndarray_type(
+                static_cast<pointer>(raw_tensor->data()),
+                static_cast<size_t>(N),
+                N > 0 ? nb_shape.data() : nullptr,
+                owner.ptr(),
+                N > 0 ? nb_strides.data() : nullptr,
+                ::nanobind::dtype<ndarray_scalar_type>(),
+                ::nanobind::device::cpu::value,
+                0,
+                order);
+
+            // Initialize from the new ndarray
+            init_from_ndarray();
+        }
+
         template <class T, std::size_t N, layout_type L>
         inline auto pytensor<T, N, L>::shape_impl() noexcept -> inner_shape_type&
         {
@@ -846,12 +1052,8 @@ NAMESPACE_BEGIN(detail)
     {
         using tensor_type = xt::nanobind::pytensor<T, N, Layout>;
         using scalar_type = std::remove_const_t<T>;
-        using ndarray_scalar_type = std::conditional_t<std::is_const_v<T>, const scalar_type, scalar_type>;
-        using ndarray_type = ::nanobind::ndarray<
-            ndarray_scalar_type,
-            ::nanobind::ndim<N>,
-            ::nanobind::numpy,
-            ::nanobind::any_contig>;
+        // Use the tensor's own ndarray_type which respects the layout
+        using ndarray_type = typename tensor_type::ndarray_type;
 
         NB_TYPE_CASTER(tensor_type, type_caster<ndarray_type>::Name)
 
@@ -1022,164 +1224,6 @@ NAMESPACE_BEGIN(detail)
         {
             return this->value;
         }
-    };
-
-    // Type caster for xt::xtensor (copies data)
-    template <class Tensor>
-    class pytensor_xtensor_caster_impl
-    {
-    public:
-        using tensor_type = Tensor;
-        using value_type = typename tensor_type::value_type;
-        using scalar_type = std::remove_const_t<value_type>;
-        static constexpr std::size_t rank = tensor_type::rank;
-        static constexpr xt::layout_type layout = tensor_type::static_layout;
-
-        using pytensor_bridge = xt::nanobind::pytensor<value_type, rank, layout>;
-        using ndarray_type = typename pytensor_bridge::ndarray_type;
-        using ndarray_scalar_type = typename pytensor_bridge::ndarray_scalar_type;
-
-        NB_TYPE_CASTER(tensor_type, type_caster<ndarray_type>::Name)
-
-        bool from_python(handle src, uint8_t flags, cleanup_list* cleanup) noexcept
-        {
-            ::nanobind::detail::make_caster<pytensor_bridge> caster;
-            flags = ::nanobind::detail::flags_for_local_caster<pytensor_bridge>(flags);
-            if (!caster.from_python(src, flags, cleanup))
-            {
-                return false;
-            }
-
-            try
-            {
-                value = tensor_type(caster.value);
-            }
-            catch (...)
-            {
-                return false;
-            }
-            return true;
-        }
-
-        static handle from_cpp(const tensor_type& tensor, rv_policy policy, cleanup_list* cleanup) noexcept
-        {
-            rv_policy effective_policy = policy;
-            if (effective_policy == rv_policy::automatic)
-            {
-                effective_policy = rv_policy::move;
-            }
-            else if (effective_policy == rv_policy::automatic_reference)
-            {
-                effective_policy = rv_policy::reference;
-            }
-
-            std::array<size_t, rank> shape{};
-            std::array<int64_t, rank> stride_buffer{};
-
-            if constexpr (rank > 0)
-            {
-                const auto& tensor_shape = tensor.shape();
-                const auto& tensor_strides = tensor.strides();
-                for (std::size_t axis = 0; axis < rank; ++axis)
-                {
-                    shape[axis] = static_cast<size_t>(tensor_shape[axis]);
-                    stride_buffer[axis] = static_cast<int64_t>(tensor_strides[axis]);
-                }
-            }
-
-            auto deduce_order = [&]() -> char {
-                if constexpr (layout == xt::layout_type::row_major)
-                {
-                    return 'C';
-                }
-                else if constexpr (layout == xt::layout_type::column_major)
-                {
-                    return 'F';
-                }
-                else
-                {
-                    if constexpr (rank <= 1)
-                    {
-                        return 'C';
-                    }
-                    // Check if row major
-                    if (xt::nanobind::detail::is_row_major(stride_buffer, shape))
-                    {
-                        return 'C';
-                    }
-                    if (xt::nanobind::detail::is_column_major(stride_buffer, shape))
-                    {
-                        return 'F';
-                    }
-                    return 'A';
-                }
-            };
-
-            auto create_array = [&](auto* data_ptr,
-                                    ::nanobind::handle owner_handle,
-                                    rv_policy array_policy) -> handle {
-                const size_t* shape_ptr = nullptr;
-                const int64_t* stride_ptr = nullptr;
-                if constexpr (rank > 0)
-                {
-                    shape_ptr = shape.data();
-                    stride_ptr = stride_buffer.data();
-                }
-
-                ndarray_type array(
-                    data_ptr,
-                    static_cast<size_t>(rank),
-                    shape_ptr,
-                    owner_handle,
-                    stride_ptr,
-                    ::nanobind::dtype<ndarray_scalar_type>(),
-                    ::nanobind::device::cpu::value,
-                    0,
-                    deduce_order());
-
-                return ::nanobind::detail::make_caster<ndarray_type>::from_cpp(array, array_policy, cleanup);
-            };
-
-            using non_const_tensor = std::remove_const_t<tensor_type>;
-
-            if (effective_policy == rv_policy::move)
-            {
-                if constexpr (!std::is_const_v<typename tensor_type::value_type>)
-                {
-                    auto* moved_tensor = new non_const_tensor(std::move(const_cast<non_const_tensor&>(tensor)));
-                    ::nanobind::object owner = ::nanobind::capsule(
-                        moved_tensor,
-                        [](void* raw) noexcept { delete static_cast<non_const_tensor*>(raw); });
-                    return create_array(moved_tensor->data(), owner, rv_policy::reference);
-                }
-                else
-                {
-                    effective_policy = rv_policy::reference;
-                }
-            }
-
-            if (effective_policy == rv_policy::copy)
-            {
-                auto* copied_tensor = new non_const_tensor(tensor);
-                ::nanobind::object owner = ::nanobind::capsule(
-                    copied_tensor,
-                    [](void* raw) noexcept { delete static_cast<non_const_tensor*>(raw); });
-                return create_array(copied_tensor->data(), owner, rv_policy::reference);
-            }
-
-            if (effective_policy == rv_policy::reference_internal && cleanup != nullptr && cleanup->self() != nullptr)
-            {
-                return create_array(const_cast<scalar_type*>(tensor.data()), ::nanobind::borrow(cleanup->self()), rv_policy::reference);
-            }
-
-            return create_array(const_cast<scalar_type*>(tensor.data()), ::nanobind::handle(), effective_policy);
-        }
-    };
-
-    template <class T, std::size_t N, xt::layout_type Layout>
-    struct type_caster<xt::xtensor<T, N, Layout>>
-        : pytensor_xtensor_caster_impl<xt::xtensor<T, N, Layout>>
-    {
     };
 
 NAMESPACE_END(detail)
