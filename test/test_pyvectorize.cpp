@@ -9,18 +9,45 @@
 
 #include "gtest/gtest.h"
 #include "test_common.hpp"
-#include "xtensor-python/pybind11/pytensor.hpp"
-#include "xtensor-python/pybind11/pyarray.hpp"
-#include "xtensor-python/pybind11/pyvectorize.hpp"
-#include "pybind11/pybind11.h"
-#include "pybind11/numpy.h"
+
+// ============================================================================
+// Backend selection via compile-time define
+// ============================================================================
+#if defined(XTENSOR_PYTHON_BACKEND_PYBIND11)
+    #include "xtensor-python/pybind11/pytensor.hpp"
+    #include "xtensor-python/pybind11/pyarray.hpp"
+    #include "xtensor-python/pybind11/pyvectorize.hpp"
+    #include "pybind11/pybind11.h"
+    #include "pybind11/numpy.h"
+    #define BACKEND_NAME pybind11
+#elif defined(XTENSOR_PYTHON_BACKEND_NANOBIND)
+    #include "xtensor-python/nanobind/pytensor.hpp"
+    #include "xtensor-python/nanobind/pyarray.hpp"
+    #include "xtensor-python/nanobind/pyvectorize.hpp"
+    #include <nanobind/nanobind.h>
+    #include <nanobind/ndarray.h>
+    #define BACKEND_NAME nanobind
+#else
+    // Default to pybind11 for backwards compatibility
+    #include "xtensor-python/pybind11/pytensor.hpp"
+    #include "xtensor-python/pybind11/pyarray.hpp"
+    #include "xtensor-python/pybind11/pyvectorize.hpp"
+    #include "pybind11/pybind11.h"
+    #include "pybind11/numpy.h"
+    #define BACKEND_NAME pybind11
+#endif
+
+// Create test suite name from backend
+#define CONCAT_IMPL(a, b) a##_##b
+#define CONCAT(a, b) CONCAT_IMPL(a, b)
+#define TEST_SUITE_NAME CONCAT(pyvectorize, BACKEND_NAME)
 
 namespace xt
 {
-    // Bring pybind11 types into xt namespace for tests
-    using pybind11::pyarray;
-    using pybind11::pytensor;
-    using pybind11::pyvectorize;
+    // Bring backend-specific types into xt namespace for tests
+    using BACKEND_NAME::pyarray;
+    using BACKEND_NAME::pytensor;
+    using BACKEND_NAME::pyvectorize;
 
     double f1(double a, double b)
     {
@@ -29,7 +56,7 @@ namespace xt
 
     using shape_type = std::vector<std::size_t>;
 
-    TEST(pyvectorize, function)
+    TEST(TEST_SUITE_NAME, function)
     {
         auto vecf1 = pyvectorize(f1);
         shape_type shape = { 3, 2 };
@@ -39,7 +66,7 @@ namespace xt
         EXPECT_EQ(a(0, 0) + b(0, 0), c(0, 0));
     }
 
-    TEST(pyvectorize, lambda)
+    TEST(TEST_SUITE_NAME, lambda)
     {
         auto vecf1 = pyvectorize([](double a, double b) { return a + b; });
         shape_type shape = { 3, 2 };
@@ -49,7 +76,7 @@ namespace xt
         EXPECT_EQ(a(0, 0) + b(0, 0), c(0, 0));
     }
 
-    TEST(pyvectorize, complex)
+    TEST(TEST_SUITE_NAME, complex)
     {
         using complex_t = std::complex<double>;
         shape_type shape = { 3, 2 };
