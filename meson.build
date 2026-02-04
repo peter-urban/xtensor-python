@@ -6,7 +6,7 @@
 project(
     'xtensor-python',
     'cpp',
-    version: '0.29.0',
+    version: '0.29.0.nanobind',
     license: 'BSD-3-Clause',
     default_options: [
         'cpp_std=c++20',
