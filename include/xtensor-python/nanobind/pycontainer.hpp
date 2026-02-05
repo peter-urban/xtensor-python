@@ -293,17 +293,16 @@ namespace xt
             }
             detail::check_dims<shape_type>::run(shape.size());
             
-            // For nanobind, we need to create a new tensor with the reshaped view
-            // This is different from pybind11 which uses PyArray_Newshape
             layout = default_assignable_layout(layout);
             
             strides_type new_strides = xtl::make_sequence<strides_type>(shape.size(), size_type(1));
             compute_strides(shape, layout, new_strides);
             
-            // Create new tensor and copy data
-            derived_type tmp(xtl::forward_sequence<shape_type, S>(std::forward<S>(shape)), new_strides);
-            std::copy(this->storage().cbegin(), this->storage().cend(), tmp.storage().begin());
-            *static_cast<derived_type*>(this) = std::move(tmp);
+            // Zero-copy reshape: update metadata in-place without copying data
+            // This is safe because:
+            // 1. The total size is the same (checked above)
+            // 2. We're just reinterpreting the existing data with new shape/strides
+            derived_cast().reshape_impl(xtl::forward_sequence<shape_type, S>(std::forward<S>(shape)), new_strides);
             
             return *this;
         }
