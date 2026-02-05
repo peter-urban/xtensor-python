@@ -345,6 +345,9 @@ namespace xt
             template <class XTensor>
             void adopt_xtensor_container(std::unique_ptr<XTensor> owned_tensor);
 
+            // Zero-copy reshape helper: updates shape/strides metadata in-place
+            void reshape_impl(const shape_type& shape, const strides_type& strides);
+
             inner_shape_type& shape_impl() noexcept;
             const inner_shape_type& shape_impl() const noexcept;
             inner_strides_type& strides_impl() noexcept;
@@ -825,6 +828,37 @@ namespace xt
                 total_size *= static_cast<size_type>(m_shape[i]);
             }
             m_storage = storage_type(m_array.data(), total_size);
+        }
+
+        /**
+         * Zero-copy reshape implementation: updates shape/strides metadata in-place.
+         * This does not copy data; it only reinterprets the existing buffer with new metadata.
+         * 
+         * Note: The caller (pycontainer::reshape) is responsible for verifying that the
+         * new shape has the same total number of elements as the current shape.
+         * 
+         * @param shape the new shape
+         * @param strides the new strides
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline void pytensor<T, N, L>::reshape_impl(const shape_type& shape, const strides_type& strides)
+        {
+            // Update shape and strides metadata
+            m_shape = shape;
+            m_strides = strides;
+            // adapt_strides updates m_backstrides based on the new shape and strides
+            // This is necessary for correct reverse iteration behavior in xtensor
+            adapt_strides(m_shape, m_strides, m_backstrides);
+            
+            // The storage size doesn't change since total elements are the same
+            // (verified by the caller in pycontainer::reshape).
+            // m_storage already points to the correct data with the correct total size
+            // We don't need to reallocate or recreate the storage adaptor
+            
+            // Note: We don't update m_array here because:
+            // 1. The pytensor's local metadata (m_shape, m_strides) is what xtensor uses for iteration
+            // 2. The underlying data pointer in m_storage is unchanged
+            // 3. The m_array is mainly used for ownership and Python interop, not for xtensor ops
         }
 
         /**
