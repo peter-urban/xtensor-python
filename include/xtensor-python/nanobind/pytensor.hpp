@@ -285,6 +285,9 @@ namespace xt
             template <class S = shape_type>
             static pytensor from_shape(S&& shape);
 
+            // Overload for initializer_list<size_t> to avoid narrowing warnings
+            static pytensor from_shape(std::initializer_list<std::size_t> shape);
+
             // Copy/move
             pytensor(const self_type& rhs);
             self_type& operator=(const self_type& rhs);
@@ -515,6 +518,21 @@ namespace xt
         {
             detail::check_dims<shape_type>::run(shape.size());
             auto shp = xtl::forward_sequence<shape_type, S>(shape);
+            return self_type(shp);
+        }
+
+        /**
+         * Allocates and returns a pytensor with the specified shape.
+         * Overload for initializer_list<size_t> to avoid narrowing warnings.
+         * @param shape the shape of the pytensor
+         */
+        template <class T, std::size_t N, layout_type L>
+        inline pytensor<T, N, L> pytensor<T, N, L>::from_shape(std::initializer_list<std::size_t> shape)
+        {
+            detail::check_dims<shape_type>::run(shape.size());
+            shape_type shp;
+            std::transform(shape.begin(), shape.end(), shp.begin(),
+                [](std::size_t v) { return static_cast<std::ptrdiff_t>(v); });
             return self_type(shp);
         }
         //@}
