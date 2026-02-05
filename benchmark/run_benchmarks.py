@@ -103,8 +103,8 @@ xt_nanobind = import_extension("benchmark_xtensor_nanobind") if HAS_NANOBIND els
 HAS_NANOBIND = xt_nanobind is not None
 
 print("\nAvailable backends:")
-print(f"  pybind11: {'✓' if HAS_PYBIND11 else '✗'}")
-print(f"  nanobind: {'✓' if HAS_NANOBIND else '✗'}")
+print(f"  pybind11: {'[OK]' if HAS_PYBIND11 else '[FAIL]'}")
+print(f"  nanobind: {'[OK]' if HAS_NANOBIND else '[FAIL]'}")
 
 if not HAS_PYBIND11 and not HAS_NANOBIND:
     print("\nError: No backend available!")
@@ -692,10 +692,10 @@ def verify_reference_semantics():
         # Check expected pattern: arr[i,j] = i * 1000 + j
         expected = np.array([[i * 1000 + j for j in range(4)] for i in range(3)], dtype=np.float64)
         if np.allclose(arr, expected):
-            print("  ✓ pybind11: pytensor correctly references numpy array (not copied)")
+            print("  [OK] pybind11: pytensor correctly references numpy array (not copied)")
             tests_passed += 1
         else:
-            print("  ✗ pybind11: FAILED - array was copied, not referenced!")
+            print("  [FAIL] pybind11: FAILED - array was copied, not referenced!")
             print(f"    Expected:\n{expected}")
             print(f"    Got:\n{arr}")
     
@@ -708,10 +708,10 @@ def verify_reference_semantics():
         # Check expected pattern: arr[i,j] = i * 1000 + j
         expected = np.array([[i * 1000 + j for j in range(4)] for i in range(3)], dtype=np.float64)
         if np.allclose(arr, expected):
-            print("  ✓ nanobind: pytensor correctly references numpy array (not copied)")
+            print("  [OK] nanobind: pytensor correctly references numpy array (not copied)")
             tests_passed += 1
         else:
-            print("  ✗ nanobind: FAILED - array was copied, not referenced!")
+            print("  [FAIL] nanobind: FAILED - array was copied, not referenced!")
             print(f"    Expected:\n{expected}")
             print(f"    Got:\n{arr}")
     
@@ -756,10 +756,10 @@ def print_pybind_vs_nanobind(results: List[BenchmarkResult]):
             # Colorize winner
             if winner == "nanobind":
                 ratio = r.pybind11_time / r.nanobind_time
-                winner_str = f"nb {ratio:.2f}x ✓"
+                winner_str = f"nb {ratio:.2f}x *"
             elif winner == "pybind11":
                 ratio = r.nanobind_time / r.pybind11_time
-                winner_str = f"pb {ratio:.2f}x ✓"
+                winner_str = f"pb {ratio:.2f}x *"
             elif winner == "lean nb":
                 winner_str = "lean nb"
             else:
@@ -839,7 +839,7 @@ def print_xtensor_vs_numpy(results: List[BenchmarkResult]):
             if xt_time and r.numpy_time:
                 ratio = r.numpy_time / xt_time
                 if ratio > 1.07:
-                    cmp_str = f"xt {ratio:.1f}x faster ✓"
+                    cmp_str = f"xt {ratio:.1f}x faster *"
                     stats["xtensor"] += 1
                 elif ratio < 0.93:
                     cmp_str = f"np {1/ratio:.1f}x faster"
@@ -891,7 +891,7 @@ def main():
     # Run reference semantics verification first
     ref_ok = verify_reference_semantics()
     if not ref_ok:
-        print("\n⚠ WARNING: Reference semantics test FAILED!")
+        print("\n[!] WARNING: Reference semantics test FAILED!")
         print("  pytensor may be copying arrays instead of referencing them.")
     
     # Run all benchmarks
