@@ -69,8 +69,7 @@ target_include_directories(benchmark_xtensor_nanobind PRIVATE
 
 target_link_libraries(benchmark_xtensor_nanobind PRIVATE xtensor)
 
-# Enable optimizations and SIMD
-target_compile_definitions(benchmark_xtensor_nanobind PRIVATE XTENSOR_USE_XSIMD)
+# Enable optimizations
 target_compile_options(benchmark_xtensor_nanobind PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-O3 -march=native -fvisibility=hidden>
     $<$<CXX_COMPILER_ID:MSVC>:/O2>

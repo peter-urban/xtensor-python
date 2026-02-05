@@ -190,8 +190,10 @@ install(TARGETS xtensor-python
 export(EXPORT ${PROJECT_NAME}-targets
        FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Targets.cmake")
 
-install(FILES ${XTENSOR_PYTHON_HEADERS}
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/xtensor-python)
+# Install headers preserving directory structure
+install(DIRECTORY ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.hpp")
 
 
 configure_file(${PROJECT_NAME}.pc.in

@@ -46,17 +46,35 @@ except ImportError:
 
 here = os.path.abspath(os.path.dirname(__file__))
 
+# Maximum characters to show from build output on failure
+MAX_STDERR_CHARS = 2000
+MAX_STDOUT_CHARS = 1000
+
 
 def build_extension(name: str, setup_script: str) -> bool:
     """Build an extension and return True if successful."""
     try:
-        subprocess.check_call(
+        result = subprocess.run(
             [sys.executable, os.path.join(here, setup_script), 'build_ext', '--inplace'],
             cwd=here,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            capture_output=True,
+            text=True
         )
-        return True
+        if result.returncode == 0:
+            return True
+        # If build fails, show the error for debugging
+        print(f"Failed to build {name}:")
+        if result.stderr:
+            stderr = result.stderr
+            if len(stderr) > MAX_STDERR_CHARS:
+                stderr = stderr[:MAX_STDERR_CHARS] + "\n... (truncated)"
+            print(f"  stderr: {stderr}")
+        if result.stdout:
+            stdout = result.stdout
+            if len(stdout) > MAX_STDOUT_CHARS:
+                stdout = stdout[:MAX_STDOUT_CHARS] + "\n... (truncated)"
+            print(f"  stdout: {stdout}")
+        return False
     except Exception as e:
         print(f"Failed to build {name}: {e}")
         return False

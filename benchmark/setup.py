@@ -32,21 +32,34 @@ class get_numpy_include(object):
         import numpy
         return numpy.get_include()
 
+
+def get_include_dirs():
+    """Build list of include directories, with conditional CONDA_PREFIX support."""
+    dirs = [
+        # Path to xtensor-python headers
+        '../include/',
+        # Path to pybind11 headers
+        get_pybind_include(),
+        get_pybind_include(user=True),
+        # Path to numpy headers
+        get_numpy_include(),
+        # System/virtualenv include path
+        os.path.join(sys.prefix, 'include'),
+        os.path.join(sys.prefix, 'Library', 'include'),
+    ]
+    # Add conda environment paths if CONDA_PREFIX differs from sys.prefix
+    conda_prefix = os.environ.get('CONDA_PREFIX')
+    if conda_prefix and conda_prefix != sys.prefix:
+        dirs.append(os.path.join(conda_prefix, 'include'))
+        dirs.append(os.path.join(conda_prefix, 'Library', 'include'))
+    return dirs
+
+
 ext_modules = [
     Extension(
         'benchmark_xtensor_python',
         ['main.cpp'],
-        include_dirs=[
-            # Path to xtensor-python headers
-            '../include/',
-            # Path to pybind11 headers
-            get_pybind_include(),
-            get_pybind_include(user=True),
-            # Path to numpy headers
-            get_numpy_include(),
-            os.path.join(sys.prefix, 'include'),
-            os.path.join(sys.prefix, 'Library', 'include')
-        ],
+        include_dirs=get_include_dirs(),
         language='c++',
         extra_link_args=['-lstdc++'] if sys.platform != 'win32' else [],
     ),
@@ -95,14 +108,12 @@ class BuildExt(build_ext):
             opts.append(cpp_flag(self.compiler))
             opts.append('-O3')
             opts.append('-march=native')  # Enable native CPU SIMD (AVX, AVX2, AVX512, etc.)
-            opts.append('-DXTENSOR_USE_XSIMD')  # Enable SIMD vectorization
             if has_flag(self.compiler, '-fvisibility=hidden'):
                 opts.append('-fvisibility=hidden')
         elif ct == 'msvc':
             opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
             opts.append('/O2')
             opts.append('/arch:AVX2')  # Enable AVX2 on MSVC
-            opts.append('/DXTENSOR_USE_XSIMD')  # Enable SIMD vectorization
         for ext in self.extensions:
             ext.extra_compile_args = opts
         build_ext.build_extensions(self)
