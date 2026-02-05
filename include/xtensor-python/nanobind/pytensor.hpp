@@ -833,6 +833,10 @@ namespace xt
         /**
          * Zero-copy reshape implementation: updates shape/strides metadata in-place.
          * This does not copy data; it only reinterprets the existing buffer with new metadata.
+         * 
+         * Note: The caller (pycontainer::reshape) is responsible for verifying that the
+         * new shape has the same total number of elements as the current shape.
+         * 
          * @param shape the new shape
          * @param strides the new strides
          */
@@ -842,9 +846,12 @@ namespace xt
             // Update shape and strides metadata
             m_shape = shape;
             m_strides = strides;
+            // adapt_strides updates m_backstrides based on the new shape and strides
+            // This is necessary for correct reverse iteration behavior in xtensor
             adapt_strides(m_shape, m_strides, m_backstrides);
             
             // The storage size doesn't change since total elements are the same
+            // (verified by the caller in pycontainer::reshape).
             // m_storage already points to the correct data with the correct total size
             // We don't need to reallocate or recreate the storage adaptor
             
