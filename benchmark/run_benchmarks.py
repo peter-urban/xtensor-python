@@ -65,9 +65,15 @@ def build_extension(name: str, setup_script: str) -> bool:
         # If build fails, show the error for debugging
         print(f"Failed to build {name}:")
         if result.stderr:
-            print(f"  stderr: {result.stderr[-MAX_STDERR_CHARS:]}")
+            stderr = result.stderr
+            if len(stderr) > MAX_STDERR_CHARS:
+                stderr = stderr[:MAX_STDERR_CHARS] + "\n... (truncated)"
+            print(f"  stderr: {stderr}")
         if result.stdout:
-            print(f"  stdout: {result.stdout[-MAX_STDOUT_CHARS:]}")
+            stdout = result.stdout
+            if len(stdout) > MAX_STDOUT_CHARS:
+                stdout = stdout[:MAX_STDOUT_CHARS] + "\n... (truncated)"
+            print(f"  stdout: {stdout}")
         return False
     except Exception as e:
         print(f"Failed to build {name}: {e}")
