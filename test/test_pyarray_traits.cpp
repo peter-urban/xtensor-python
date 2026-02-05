@@ -9,12 +9,25 @@
 
 #include "gtest/gtest.h"
 
-#include "xtensor-python/pyarray.hpp"
-
-
+// ============================================================================
+// Backend selection via compile-time define
+// ============================================================================
+#if defined(XTENSOR_PYTHON_BACKEND_PYBIND11)
+    #include "xtensor-python/pybind11/pyarray.hpp"
+    #define BACKEND_NAME pybind11
+#elif defined(XTENSOR_PYTHON_BACKEND_NANOBIND)
+    #include "xtensor-python/nanobind/pyarray.hpp"
+    #define BACKEND_NAME nanobind
+#else
+    // Default to pybind11 for backwards compatibility
+    #include "xtensor-python/pybind11/pyarray.hpp"
+    #define BACKEND_NAME pybind11
+#endif
 
 namespace xt
 {
+    // Bring backend-specific types into xt namespace for tests
+    using BACKEND_NAME::pyarray;
     namespace testing
     {
         class pyarray_traits: public ::testing::Test

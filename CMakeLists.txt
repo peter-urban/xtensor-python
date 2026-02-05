@@ -46,19 +46,64 @@ else()
     message(STATUS "Found xtensor: ${xtensor_INCLUDE_DIRS}/xtensor")
 endif()
 
-find_package(Python COMPONENTS Interpreter REQUIRED)
+find_package(Python COMPONENTS Interpreter Development REQUIRED)
+
+# Backend detection
+# =================
+# Options: AUTO (default), ON (required), OFF (disabled)
+set(XTENSOR_PYTHON_USE_PYBIND11 "AUTO" CACHE STRING "Enable pybind11 backend (AUTO/ON/OFF)")
+set(XTENSOR_PYTHON_USE_NANOBIND "AUTO" CACHE STRING "Enable nanobind backend (AUTO/ON/OFF)")
 
 set(pybind11_REQUIRED_VERSION 3.0.0)
-if (NOT TARGET pybind11::headers)
-    # Defaults to ON for cmake >= 3.18
-    # https://github.com/pybind/pybind11/blob/35ff42b56e9d34d9a944266eb25f2c899dbdfed7/CMakeLists.txt#L96
-    set(PYBIND11_FINDPYTHON OFF)
-    find_package(pybind11 ${pybind11_REQUIRED_VERSION} REQUIRED)
-    message(STATUS "Found pybind11: ${pybind11_INCLUDE_DIRS}/pybind11")
-else ()
-    # pybind11 has a variable that indicates its version already, so use that
-    message(STATUS "Found pybind11 v${pybind11_VERSION}")
-endif ()
+set(XTENSOR_PYTHON_HAS_PYBIND11 OFF)
+
+if(NOT XTENSOR_PYTHON_USE_PYBIND11 STREQUAL "OFF")
+    if (NOT TARGET pybind11::headers)
+        # Defaults to ON for cmake >= 3.18
+        set(PYBIND11_FINDPYTHON OFF)
+        find_package(pybind11 ${pybind11_REQUIRED_VERSION} QUIET)
+    endif()
+    
+    if(TARGET pybind11::headers OR pybind11_FOUND)
+        set(XTENSOR_PYTHON_HAS_PYBIND11 ON)
+        message(STATUS "Found pybind11 v${pybind11_VERSION}: enabling pybind11 backend")
+    elseif(XTENSOR_PYTHON_USE_PYBIND11 STREQUAL "ON")
+        message(FATAL_ERROR "pybind11 backend explicitly requested but pybind11 >= ${pybind11_REQUIRED_VERSION} not found")
+    else()
+        message(STATUS "pybind11 not found: pybind11 backend disabled")
+    endif()
+endif()
+
+set(XTENSOR_PYTHON_HAS_NANOBIND OFF)
+
+if(NOT XTENSOR_PYTHON_USE_NANOBIND STREQUAL "OFF")
+    # Use official nanobind CMake integration
+    execute_process(
+        COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE 
+        OUTPUT_VARIABLE nanobind_ROOT
+        ERROR_QUIET
+        RESULT_VARIABLE NANOBIND_RESULT
+    )
+    
+    if(NANOBIND_RESULT EQUAL 0 AND EXISTS "${nanobind_ROOT}")
+        find_package(nanobind QUIET CONFIG)
+    endif()
+    
+    if(nanobind_FOUND)
+        set(XTENSOR_PYTHON_HAS_NANOBIND ON)
+        message(STATUS "Found nanobind: enabling nanobind backend")
+    elseif(XTENSOR_PYTHON_USE_NANOBIND STREQUAL "ON")
+        message(FATAL_ERROR "nanobind backend explicitly requested but nanobind not found")
+    else()
+        message(STATUS "nanobind not found: nanobind backend disabled")
+    endif()
+endif()
+
+# Require at least one backend
+if(NOT XTENSOR_PYTHON_HAS_PYBIND11 AND NOT XTENSOR_PYTHON_HAS_NANOBIND)
+    message(FATAL_ERROR "No binding backend found. Install pybind11 (>= ${pybind11_REQUIRED_VERSION}) or nanobind, or set XTENSOR_PYTHON_USE_PYBIND11=ON or XTENSOR_PYTHON_USE_NANOBIND=ON to make it required.")
+endif()
 
 # Look for NumPy headers, except if NUMPY_INCLUDE_DIRS is passed,
 # which is required under some circumstances (such as wasm, where
@@ -72,22 +117,46 @@ message(STATUS "Found numpy: ${NUMPY_INCLUDE_DIRS}")
 # =====
 
 set(XTENSOR_PYTHON_HEADERS
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pyarray.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pyarray_backstrides.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pycontainer.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pynative_casters.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pystrides_adaptor.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pytensor.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pyvectorize.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/detail/pyarray_backstrides.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/detail/pystrides_adaptor.hpp
         ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/xtensor_python_config.hpp
-        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/xtensor_type_caster_base.hpp
         )
+
+# Add pybind11 backend headers
+if(XTENSOR_PYTHON_HAS_PYBIND11)
+    list(APPEND XTENSOR_PYTHON_HEADERS
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pyarray.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pycontainer.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pynative_casters.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pytensor.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/pyvectorize.hpp
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/pybind11/xtensor_type_caster_base.hpp
+    )
+endif()
+
+# Add nanobind backend headers
+if(XTENSOR_PYTHON_HAS_NANOBIND)
+    list(APPEND XTENSOR_PYTHON_HEADERS
+        ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python/nanobind/pytensor.hpp
+    )
+endif()
 
 add_library(xtensor-python INTERFACE)
 target_include_directories(xtensor-python INTERFACE
-    "$<BUILD_INTERFACE:${XTENSOR_PYTHON_INCLUDE_DIR};${pybind11_INCLUDE_DIRS};${NUMPY_INCLUDE_DIRS}>"
+    "$<BUILD_INTERFACE:${XTENSOR_PYTHON_INCLUDE_DIR};${NUMPY_INCLUDE_DIRS}>"
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(xtensor-python INTERFACE xtensor)
+
+# Add backend-specific include directories
+if(XTENSOR_PYTHON_HAS_PYBIND11)
+    target_include_directories(xtensor-python INTERFACE
+        "$<BUILD_INTERFACE:${pybind11_INCLUDE_DIRS}>")
+endif()
+if(XTENSOR_PYTHON_HAS_NANOBIND)
+    target_include_directories(xtensor-python INTERFACE
+        "$<BUILD_INTERFACE:${nanobind_INCLUDE_DIRS}>")
+endif()
+
 get_target_property(inc_dir xtensor-python INTERFACE_INCLUDE_DIRECTORIES)
 
 OPTION(BUILD_TESTS "xtensor test suite" OFF)
@@ -121,8 +190,10 @@ install(TARGETS xtensor-python
 export(EXPORT ${PROJECT_NAME}-targets
        FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Targets.cmake")
 
-install(FILES ${XTENSOR_PYTHON_HEADERS}
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/xtensor-python)
+# Install headers preserving directory structure
+install(DIRECTORY ${XTENSOR_PYTHON_INCLUDE_DIR}/xtensor-python
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.hpp")
 
 
 configure_file(${PROJECT_NAME}.pc.in
