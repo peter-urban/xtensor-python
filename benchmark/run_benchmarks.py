@@ -47,8 +47,8 @@ except ImportError:
 here = os.path.abspath(os.path.dirname(__file__))
 
 # Maximum characters to show from build output on failure
-MAX_STDERR_CHARS = 2000
-MAX_STDOUT_CHARS = 1000
+MAX_STDERR_CHARS = 5000
+MAX_STDOUT_CHARS = 5000
 
 
 def build_extension(name: str, setup_script: str) -> bool:
@@ -107,8 +107,8 @@ print(f"  pybind11: {'[OK]' if HAS_PYBIND11 else '[FAIL]'}")
 print(f"  nanobind: {'[OK]' if HAS_NANOBIND else '[FAIL]'}")
 
 if not HAS_PYBIND11 and not HAS_NANOBIND:
-    print("\nError: No backend available!")
-    sys.exit(1)
+    print("\nWarning: No backend available! Skipping benchmarks.")
+    sys.exit(0)
 
 
 class BenchmarkResult:

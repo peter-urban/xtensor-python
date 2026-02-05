@@ -99,7 +99,7 @@ target_compile_options(benchmark_xtensor_nanobind PRIVATE
     subprocess.check_call(cmake_args, cwd=build_dir)
 
     # Build
-    build_args = ['cmake', '--build', '.', '--config', 'Release', '-j4']
+    build_args = ['cmake', '--build', '.', '--config', 'Release']
     print(f"Building with: {' '.join(build_args)}")
     subprocess.check_call(build_args, cwd=build_dir)
 

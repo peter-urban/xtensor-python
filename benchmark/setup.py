@@ -4,6 +4,13 @@ import sys
 import os
 import setuptools
 
+# On Windows, tell distutils to use the compiler from the SDK environment
+# (set up by ilammy/msvc-dev-cmd or similar). Without this, distutils may pick
+# the 32-bit host compiler (HostX86) which runs out of memory on template-heavy code.
+if sys.platform == 'win32':
+    os.environ.setdefault('DISTUTILS_USE_SDK', '1')
+    os.environ.setdefault('MSSdk', '1')
+
 __version__ = '0.0.1'
 
 
