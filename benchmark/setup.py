@@ -44,8 +44,12 @@ ext_modules = [
             get_pybind_include(user=True),
             # Path to numpy headers
             get_numpy_include(),
+            # System/virtualenv include path
             os.path.join(sys.prefix, 'include'),
-            os.path.join(sys.prefix, 'Library', 'include')
+            os.path.join(sys.prefix, 'Library', 'include'),
+            # Conda environment include path (micromamba uses CONDA_PREFIX)
+            os.path.join(os.environ.get('CONDA_PREFIX', sys.prefix), 'include'),
+            os.path.join(os.environ.get('CONDA_PREFIX', sys.prefix), 'Library', 'include'),
         ],
         language='c++',
         extra_link_args=['-lstdc++'] if sys.platform != 'win32' else [],
@@ -95,14 +99,12 @@ class BuildExt(build_ext):
             opts.append(cpp_flag(self.compiler))
             opts.append('-O3')
             opts.append('-march=native')  # Enable native CPU SIMD (AVX, AVX2, AVX512, etc.)
-            opts.append('-DXTENSOR_USE_XSIMD')  # Enable SIMD vectorization
             if has_flag(self.compiler, '-fvisibility=hidden'):
                 opts.append('-fvisibility=hidden')
         elif ct == 'msvc':
             opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
             opts.append('/O2')
             opts.append('/arch:AVX2')  # Enable AVX2 on MSVC
-            opts.append('/DXTENSOR_USE_XSIMD')  # Enable SIMD vectorization
         for ext in self.extensions:
             ext.extra_compile_args = opts
         build_ext.build_extensions(self)

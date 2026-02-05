@@ -50,13 +50,22 @@ here = os.path.abspath(os.path.dirname(__file__))
 def build_extension(name: str, setup_script: str) -> bool:
     """Build an extension and return True if successful."""
     try:
-        subprocess.check_call(
+        # First try quiet build
+        result = subprocess.run(
             [sys.executable, os.path.join(here, setup_script), 'build_ext', '--inplace'],
             cwd=here,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            capture_output=True,
+            text=True
         )
-        return True
+        if result.returncode == 0:
+            return True
+        # If build fails, show the error for debugging
+        print(f"Failed to build {name}:")
+        if result.stderr:
+            print(f"  stderr: {result.stderr[-2000:]}")  # Last 2000 chars of stderr
+        if result.stdout:
+            print(f"  stdout: {result.stdout[-1000:]}")  # Last 1000 chars of stdout
+        return False
     except Exception as e:
         print(f"Failed to build {name}: {e}")
         return False
