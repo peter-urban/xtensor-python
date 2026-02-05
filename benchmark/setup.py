@@ -34,7 +34,7 @@ class get_numpy_include(object):
 
 
 def get_include_dirs():
-    """Build list of include directories, avoiding duplicates."""
+    """Build list of include directories, with conditional CONDA_PREFIX support."""
     dirs = [
         # Path to xtensor-python headers
         '../include/',

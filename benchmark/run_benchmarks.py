@@ -54,7 +54,6 @@ MAX_STDOUT_CHARS = 1000
 def build_extension(name: str, setup_script: str) -> bool:
     """Build an extension and return True if successful."""
     try:
-        # First try quiet build
         result = subprocess.run(
             [sys.executable, os.path.join(here, setup_script), 'build_ext', '--inplace'],
             cwd=here,
