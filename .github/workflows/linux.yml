@@ -68,11 +68,15 @@ jobs:
 
     - name: Build
       working-directory: build
-      run: cmake --build . --target test_xtensor_python --parallel 8
+      run: cmake --build . --target test_xtensor_python_pybind11 test_xtensor_python_nanobind --parallel 8
 
-    - name: Run tests (C++)
+    - name: Run tests (C++ pybind11)
       working-directory: build/test
-      run: ./test_xtensor_python
+      run: ./test_xtensor_python_pybind11
+
+    - name: Run tests (C++ nanobind)
+      working-directory: build/test
+      run: ./test_xtensor_python_nanobind
 
     - name: Run tests (Python)
       run: pytest -s
