@@ -32,6 +32,8 @@ def build_with_cmake():
     here = os.path.dirname(os.path.abspath(__file__))
     build_dir = os.path.join(here, 'build_nanobind')
     include_dir = os.path.abspath(os.path.join(here, '..', 'include'))
+    # Convert backslashes to forward slashes for CMake compatibility on Windows
+    include_dir = include_dir.replace('\\', '/')
 
     # Create build directory
     os.makedirs(build_dir, exist_ok=True)
