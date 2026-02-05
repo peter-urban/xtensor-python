@@ -3,7 +3,8 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [master]
+    branches:
+      - '**'
 concurrency:
   group: ${{ github.workflow }}-${{ github.job }}-${{ github.ref }}
   cancel-in-progress: true
@@ -75,6 +76,11 @@ jobs:
 
     - name: Run tests (Python)
       run: pytest -s
+
+    - name: Run benchmarks (pybind11 vs nanobind)
+      working-directory: benchmark
+      run: |
+        python run_benchmarks.py --iterations 100 --size 100000
 
     - name: Example - readme 1
       working-directory: docs/source/examples/readme_example_1

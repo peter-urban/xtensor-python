@@ -17,6 +17,7 @@
 #include "xtensor/containers/xfixed.hpp"
 #include "xtensor/containers/xadapt.hpp"
 #include "xtensor/views/xstrided_view.hpp"
+#include "xtensor/reducers/xreducer.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -354,4 +355,199 @@ NB_MODULE(xtensor_nanobind_test, m)
         // does not provide a data interface (uses flat_expression_adaptor)
 
     m.def("test_rm", &test_rm);
+
+    // ========================================================================
+    // Diagnostic benchmark functions to isolate xarray slowdown
+    // ========================================================================
+    
+    // Auto-convert via type caster (what we want to benchmark)
+    m.def("auto_convert_xtensor_input", [](const xt::xtensor<double, 1>& x) {
+        return xt::sum(x)();
+    });
+    
+    m.def("auto_convert_xarray_input", [](const xt::xarray<double>& x) {
+        return xt::sum(x)();
+    });
+
+    // Direct ndarray access (bypass type caster entirely)
+    m.def("diag_ndarray_only", [](nb::ndarray<double, nb::numpy, nb::c_contig> const& arr) {
+        return arr.size();
+    });
+
+    // Manual implementation mimicking type caster - xtensor
+    m.def("diag_manual_xtensor", [](nb::ndarray<double, nb::numpy, nb::c_contig> const& arr) {
+        xt::xtensor<double, 1> result = xt::xtensor<double, 1>::from_shape({arr.shape(0)});
+        std::copy(arr.data(), arr.data() + arr.size(), result.data());
+        return xt::sum(result)();
+    });
+
+    // Manual implementation mimicking type caster - xarray  
+    m.def("diag_manual_xarray", [](nb::ndarray<double, nb::numpy, nb::c_contig> const& arr) {
+        std::vector<std::size_t> shape(arr.ndim());
+        for (std::size_t i = 0; i < arr.ndim(); ++i) {
+            shape[i] = arr.shape(i);
+        }
+        xt::xarray<double> result = xt::xarray<double>::from_shape(shape);
+        std::copy(arr.data(), arr.data() + arr.size(), result.data());
+        return xt::sum(result)();
+    });
+
+    // Just allocation, no copy - xtensor
+    m.def("diag_alloc_xtensor", [](nb::ndarray<double, nb::numpy, nb::c_contig> const& arr) {
+        xt::xtensor<double, 1> result = xt::xtensor<double, 1>::from_shape({arr.shape(0)});
+        return result.size();
+    });
+
+    // Just allocation, no copy - xarray
+    m.def("diag_alloc_xarray", [](nb::ndarray<double, nb::numpy, nb::c_contig> const& arr) {
+        std::vector<std::size_t> shape(arr.ndim());
+        for (std::size_t i = 0; i < arr.ndim(); ++i) {
+            shape[i] = arr.shape(i);
+        }
+        xt::xarray<double> result = xt::xarray<double>::from_shape(shape);
+        return result.size();
+    });
+
+    // Test if noconvert flag adds overhead
+    m.def("sum_pytensor_noconvert", [](pytensor<double, 1> const& x) {
+        return xt::sum(x)();
+    }, nb::arg("x").noconvert());
+
+    m.def("sum_pytensor_convert", [](pytensor<double, 1> const& x) {
+        return xt::sum(x)();
+    });
+
+    // Raw C++ loop (bypass xtensor machinery)
+    m.def("sum_raw_loop", [](pytensor<double, 1> const& x) {
+        double sum = 0.0;
+        const double* ptr = x.data();
+        const std::size_t n = x.size();
+        for (std::size_t i = 0; i < n; ++i) {
+            sum += ptr[i];
+        }
+        return sum;
+    });
+
+    // Just iterate through pytensor (using xtensor iterators)
+    m.def("sum_xtensor_iter", [](pytensor<double, 1> const& x) {
+        double sum = 0.0;
+        for (auto it = x.begin(); it != x.end(); ++it) {
+            sum += *it;
+        }
+        return sum;
+    });
+
+    // Using data() pointer with xt::sum on adapted view
+    m.def("sum_adapted", [](pytensor<double, 1> const& x) {
+        auto adapted = xt::adapt(x.data(), x.size(), xt::no_ownership(), std::array<std::size_t, 1>{x.size()});
+        return xt::sum(adapted)();
+    });
+
+    // Debug: Check layout and strides
+    m.def("debug_layout", [](pytensor<double, 1> const& x) {
+        std::string result;
+        result += "size: " + std::to_string(x.size()) + "\n";
+        result += "shape[0]: " + std::to_string(x.shape()[0]) + "\n";
+        result += "strides[0]: " + std::to_string(x.strides()[0]) + "\n";
+        result += "backstrides[0]: " + std::to_string(x.backstrides()[0]) + "\n";
+        result += "layout: " + std::to_string(static_cast<int>(x.layout())) + "\n";
+        result += "is_contiguous: " + std::to_string(x.is_contiguous()) + "\n";
+        return result;
+    });
+
+    // Debug: Check layout and strides for 2D
+    m.def("debug_layout_2d", [](pytensor<double, 2> const& x) {
+        std::string result;
+        result += "size: " + std::to_string(x.size()) + "\n";
+        result += "shape[0]: " + std::to_string(x.shape()[0]) + "\n";
+        result += "shape[1]: " + std::to_string(x.shape()[1]) + "\n";
+        result += "strides[0]: " + std::to_string(x.strides()[0]) + "\n";
+        result += "strides[1]: " + std::to_string(x.strides()[1]) + "\n";
+        result += "backstrides[0]: " + std::to_string(x.backstrides()[0]) + "\n";
+        result += "backstrides[1]: " + std::to_string(x.backstrides()[1]) + "\n";
+        result += "layout: " + std::to_string(static_cast<int>(x.layout())) + "\n";
+        result += "is_contiguous: " + std::to_string(x.is_contiguous()) + "\n";
+        return result;
+    });
+
+    // Sum 2D via xtensor iterator
+    m.def("sum_pytensor2d_iter", [](pytensor<double, 2> const& x) {
+        double sum = 0.0;
+        for (auto it = x.begin(); it != x.end(); ++it) {
+            sum += *it;
+        }
+        return sum;
+    });
+
+    // Sum 2D via raw loop
+    m.def("sum_pytensor2d_raw", [](pytensor<double, 2> const& x) {
+        double sum = 0.0;
+        const double* ptr = x.data();
+        const std::size_t n = x.size();
+        for (std::size_t i = 0; i < n; ++i) {
+            sum += ptr[i];
+        }
+        return sum;
+    });
+
+    // Check iterator types
+    m.def("iter_info", [](pytensor<double, 1> const& x) {
+        std::string result;
+        auto begin_iter = x.begin();
+        auto end_iter = x.end();
+        
+        // Check if the iterator is a simple pointer
+        result += "begin type: " + std::string(typeid(begin_iter).name()) + "\n";
+        result += "storage begin type: " + std::string(typeid(x.storage().begin()).name()) + "\n";
+        
+        // Check if begin() == data()
+        result += "begin() == data(): " + std::to_string(&(*begin_iter) == x.data()) + "\n";
+        result += "storage.begin() == data(): " + std::to_string(&(*x.storage().begin()) == x.data()) + "\n";
+        
+        return result;
+    });
+
+    // Test storage iteration directly
+    m.def("sum_storage_iter", [](pytensor<double, 1> const& x) {
+        double sum = 0.0;
+        for (auto it = x.storage().begin(); it != x.storage().end(); ++it) {
+            sum += *it;
+        }
+        return sum;
+    });
+
+    // Test with explicit row_major layout
+    m.def("sum_pytensor_rowmajor", [](pytensor<double, 1, xt::layout_type::row_major> const& x) {
+        return xt::sum(x)();
+    });
+
+    m.def("sum_iter_rowmajor", [](pytensor<double, 1, xt::layout_type::row_major> const& x) {
+        double sum = 0.0;
+        for (auto it = x.begin(); it != x.end(); ++it) {
+            sum += *it;
+        }
+        return sum;
+    });
+
+    // Debug row_major
+    m.def("debug_rowmajor", [](pytensor<double, 1, xt::layout_type::row_major> const& x) {
+        std::string result;
+        result += "size: " + std::to_string(x.size()) + "\n";
+        result += "shape[0]: " + std::to_string(x.shape()[0]) + "\n";
+        result += "strides[0]: " + std::to_string(x.strides()[0]) + "\n";
+        result += "data != nullptr: " + std::to_string(x.data() != nullptr) + "\n";
+        result += "begin == end: " + std::to_string(x.begin() == x.end()) + "\n";
+        result += "storage size: " + std::to_string(x.storage().size()) + "\n";
+        result += "ndarray valid: " + std::to_string(x.ndarray().is_valid()) + "\n";
+        result += "ndarray ndim: " + std::to_string(x.ndarray().ndim()) + "\n";
+        if (x.ndarray().is_valid()) {
+            result += "ndarray shape[0]: " + std::to_string(x.ndarray().shape(0)) + "\n";
+            result += "ndarray size: " + std::to_string(x.ndarray().size()) + "\n";
+            result += "ndarray data: " + std::to_string(reinterpret_cast<uintptr_t>(x.ndarray().data())) + "\n";
+        }
+        if (x.data() && x.size() > 0) {
+            result += "first element via data: " + std::to_string(x.data()[0]) + "\n";
+        }
+        return result;
+    });
 }

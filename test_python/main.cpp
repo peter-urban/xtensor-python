@@ -399,4 +399,181 @@ PYBIND11_MODULE(xtensor_python_test, m)
             .def("view_keep_alive_member_function", [](test_native_casters & self, xt::pyarray<double> & a) // keep_alive<0, 2>() => do not free second parameter before the returned view
                     {return xt::reshape_view(a, {a.size(), });},
                     py::keep_alive<0, 2>());
+
+    // ========================================================================
+    // Diagnostic benchmark functions to isolate xarray slowdown
+    // ========================================================================
+    
+    // Auto-convert via type caster (what we want to benchmark)
+    m.def("auto_convert_xtensor_input", [](const xt::xtensor<double, 1>& x) {
+        return xt::sum(x)();
+    });
+    
+    m.def("auto_convert_xarray_input", [](const xt::xarray<double>& x) {
+        return xt::sum(x)();
+    });
+
+    // Direct array access (bypass type caster entirely)
+    m.def("diag_ndarray_only", [](py::array_t<double, py::array::c_style | py::array::forcecast> const& arr) {
+        return arr.size();
+    });
+
+    // Manual implementation mimicking type caster - xtensor
+    m.def("diag_manual_xtensor", [](py::array_t<double, py::array::c_style | py::array::forcecast> const& arr) {
+        auto buf = arr.request();
+        xt::xtensor<double, 1> result = xt::xtensor<double, 1>::from_shape({static_cast<size_t>(buf.shape[0])});
+        std::copy(static_cast<double*>(buf.ptr), static_cast<double*>(buf.ptr) + buf.size, result.data());
+        return xt::sum(result)();
+    });
+
+    // Manual implementation mimicking type caster - xarray  
+    m.def("diag_manual_xarray", [](py::array_t<double, py::array::c_style | py::array::forcecast> const& arr) {
+        auto buf = arr.request();
+        std::vector<std::size_t> shape(buf.ndim);
+        for (size_t i = 0; i < buf.ndim; ++i) {
+            shape[i] = static_cast<size_t>(buf.shape[i]);
+        }
+        xt::xarray<double> result = xt::xarray<double>::from_shape(shape);
+        std::copy(static_cast<double*>(buf.ptr), static_cast<double*>(buf.ptr) + buf.size, result.data());
+        return xt::sum(result)();
+    });
+
+    // Just allocation, no copy - xtensor
+    m.def("diag_alloc_xtensor", [](py::array_t<double, py::array::c_style | py::array::forcecast> const& arr) {
+        auto buf = arr.request();
+        xt::xtensor<double, 1> result = xt::xtensor<double, 1>::from_shape({static_cast<size_t>(buf.shape[0])});
+        return result.size();
+    });
+
+    // Just allocation, no copy - xarray
+    m.def("diag_alloc_xarray", [](py::array_t<double, py::array::c_style | py::array::forcecast> const& arr) {
+        auto buf = arr.request();
+        std::vector<std::size_t> shape(buf.ndim);
+        for (size_t i = 0; i < buf.ndim; ++i) {
+            shape[i] = static_cast<size_t>(buf.shape[i]);
+        }
+        xt::xarray<double> result = xt::xarray<double>::from_shape(shape);
+        return result.size();
+    });
+
+    // Test if noconvert flag adds overhead
+    m.def("sum_pytensor_noconvert", [](xt::pytensor<double, 1> const& x) {
+        return xt::sum(x)();
+    }, py::arg("x").noconvert());
+
+    m.def("sum_pytensor_convert", [](xt::pytensor<double, 1> const& x) {
+        return xt::sum(x)();
+    });
+
+    // Raw C++ loop (bypass xtensor machinery)
+    m.def("sum_raw_loop", [](xt::pytensor<double, 1> const& x) {
+        double sum = 0.0;
+        const double* ptr = x.data();
+        const std::size_t n = x.size();
+        for (std::size_t i = 0; i < n; ++i) {
+            sum += ptr[i];
+        }
+        return sum;
+    });
+
+    // Just iterate through pytensor (using xtensor iterators)
+    m.def("sum_xtensor_iter", [](xt::pytensor<double, 1> const& x) {
+        double sum = 0.0;
+        for (auto it = x.begin(); it != x.end(); ++it) {
+            sum += *it;
+        }
+        return sum;
+    });
+
+    // Using data() pointer with xt::sum on adapted view
+    m.def("sum_adapted", [](xt::pytensor<double, 1> const& x) {
+        auto adapted = xt::adapt(x.data(), x.size(), xt::no_ownership(), std::array<std::size_t, 1>{x.size()});
+        return xt::sum(adapted)();
+    });
+
+    // Debug: Check layout and strides
+    m.def("debug_layout", [](xt::pytensor<double, 1> const& x) {
+        std::string result;
+        result += "size: " + std::to_string(x.size()) + "\n";
+        result += "shape[0]: " + std::to_string(x.shape()[0]) + "\n";
+        result += "strides[0]: " + std::to_string(x.strides()[0]) + "\n";
+        result += "backstrides[0]: " + std::to_string(x.backstrides()[0]) + "\n";
+        result += "layout: " + std::to_string(static_cast<int>(x.layout())) + "\n";
+        result += "is_contiguous: " + std::to_string(x.is_contiguous()) + "\n";
+        return result;
+    });
+
+    // Debug: Check layout and strides for 2D
+    m.def("debug_layout_2d", [](xt::pytensor<double, 2> const& x) {
+        std::string result;
+        result += "size: " + std::to_string(x.size()) + "\n";
+        result += "shape[0]: " + std::to_string(x.shape()[0]) + "\n";
+        result += "shape[1]: " + std::to_string(x.shape()[1]) + "\n";
+        result += "strides[0]: " + std::to_string(x.strides()[0]) + "\n";
+        result += "strides[1]: " + std::to_string(x.strides()[1]) + "\n";
+        result += "backstrides[0]: " + std::to_string(x.backstrides()[0]) + "\n";
+        result += "backstrides[1]: " + std::to_string(x.backstrides()[1]) + "\n";
+        result += "layout: " + std::to_string(static_cast<int>(x.layout())) + "\n";
+        result += "is_contiguous: " + std::to_string(x.is_contiguous()) + "\n";
+        return result;
+    });
+
+    // Sum 2D via xtensor iterator
+    m.def("sum_pytensor2d_iter", [](xt::pytensor<double, 2> const& x) {
+        double sum = 0.0;
+        for (auto it = x.begin(); it != x.end(); ++it) {
+            sum += *it;
+        }
+        return sum;
+    });
+
+    // Sum 2D via raw loop
+    m.def("sum_pytensor2d_raw", [](xt::pytensor<double, 2> const& x) {
+        double sum = 0.0;
+        const double* ptr = x.data();
+        const std::size_t n = x.size();
+        for (std::size_t i = 0; i < n; ++i) {
+            sum += ptr[i];
+        }
+        return sum;
+    });
+
+    // Check iterator types
+    m.def("iter_info", [](xt::pytensor<double, 1> const& x) {
+        std::string result;
+        auto begin_iter = x.begin();
+        auto end_iter = x.end();
+        
+        // Check if the iterator is a simple pointer
+        result += "begin type: " + std::string(typeid(begin_iter).name()) + "\n";
+        result += "storage begin type: " + std::string(typeid(x.storage().begin()).name()) + "\n";
+        
+        // Check if begin() == data()
+        result += "begin() == data(): " + std::to_string(&(*begin_iter) == x.data()) + "\n";
+        result += "storage.begin() == data(): " + std::to_string(&(*x.storage().begin()) == x.data()) + "\n";
+        
+        return result;
+    });
+
+    // Test storage iteration directly
+    m.def("sum_storage_iter", [](xt::pytensor<double, 1> const& x) {
+        double sum = 0.0;
+        for (auto it = x.storage().begin(); it != x.storage().end(); ++it) {
+            sum += *it;
+        }
+        return sum;
+    });
+
+    // Test with explicit row_major layout
+    m.def("sum_pytensor_rowmajor", [](xt::pytensor<double, 1, xt::layout_type::row_major> const& x) {
+        return xt::sum(x)();
+    });
+
+    m.def("sum_iter_rowmajor", [](xt::pytensor<double, 1, xt::layout_type::row_major> const& x) {
+        double sum = 0.0;
+        for (auto it = x.begin(); it != x.end(); ++it) {
+            sum += *it;
+        }
+        return sum;
+    });
 }

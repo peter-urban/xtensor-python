@@ -799,9 +799,14 @@ namespace xt
 
             adapt_strides(m_shape, m_strides, m_backstrides);
 
-            // Compute buffer size
-            size_type buffer_size = this->get_buffer_size();
-            m_storage = storage_type(m_array.data(), buffer_size);
+            // Compute buffer size directly from shape to avoid circular dependency
+            // (this->size() may call storage().size() for contiguous layouts, but storage isn't set yet)
+            size_type total_size = 1;
+            for (std::size_t i = 0; i < N; ++i)
+            {
+                total_size *= static_cast<size_type>(m_shape[i]);
+            }
+            m_storage = storage_type(m_array.data(), total_size);
         }
 
         /**

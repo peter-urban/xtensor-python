@@ -37,6 +37,13 @@ from typing import Optional, List, Tuple
 
 import numpy as np
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    print("Installing tqdm...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "tqdm", "-q"])
+    from tqdm import tqdm
+
 here = os.path.abspath(os.path.dirname(__file__))
 
 
@@ -103,24 +110,32 @@ class BenchmarkResult:
         return min(times) if times else None
     
     def get_winner(self) -> str:
-        """Return 'pybind11', 'nanobind', or 'comparable'."""
+        """Return 'pybind11', 'nanobind', or 'lean pb'/'lean nb' for small differences."""
         if not (self.pybind11_time and self.nanobind_time):
             return "N/A"
         ratio = self.pybind11_time / self.nanobind_time
-        if ratio > 1.05:
+        if ratio > 1.07:  # nanobind is >7% faster
             return "nanobind"
-        elif ratio < 0.95:
+        elif ratio < 0.93:  # pybind11 is >7% faster
             return "pybind11"
-        return "comparable"
+        elif ratio > 1.0:
+            return "lean nb"
+        else:
+            return "lean pb"
 
 
 def run_benchmark(name: str, setup_code: str,
                   pybind11_code: Optional[str], nanobind_code: Optional[str],
                   iterations: int, warmup: int = 3,
                   numpy_code: Optional[str] = None,
-                  category: str = "general") -> BenchmarkResult:
+                  category: str = "general",
+                  pbar: Optional[tqdm] = None) -> BenchmarkResult:
     """Run a benchmark for both backends and optionally NumPy."""
     result = BenchmarkResult(name, category=category)
+    
+    if pbar:
+        pbar.set_description(f"{name[:40]:<40}")
+        pbar.update(1)
 
     # Warmup and benchmark pybind11
     if HAS_PYBIND11 and pybind11_code:
@@ -181,9 +196,21 @@ def format_speedup(ratio: float) -> str:
     return "~equal"
 
 
+def count_benchmarks(size: int) -> int:
+    """Count total number of benchmarks to run."""
+    # Base benchmarks that always run
+    count = 29  # approximate number of benchmarks
+    return count
+
+
 def run_all_benchmarks(iterations: int, size: int, warmup: int) -> List[BenchmarkResult]:
     """Run all benchmarks and return results."""
     results = []
+    
+    # Estimate total benchmarks for progress bar
+    total_benchmarks = 50  # Updated for new benchmarks
+    pbar = tqdm(total=total_benchmarks, desc="Running benchmarks", unit="test",
+                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]')
     
     # ========================================================================
     # Basic Sum Operations
@@ -193,26 +220,30 @@ def run_all_benchmarks(iterations: int, size: int, warmup: int) -> List[Benchmar
     results.append(run_benchmark(
         "sum_tensor (pytensor, 1D)", setup,
         "xt.sum_tensor(u)", "xt.sum_tensor(u)",
-        iterations, warmup, numpy_code="np.sum(u)", category="sum"
+        iterations, warmup, numpy_code="np.sum(u)", category="sum",
+        pbar=pbar
     ))
     
     if HAS_PYBIND11:
         results.append(run_benchmark(
             "sum_array (pyarray)", setup,
             "xt.sum_array(u)", None,
-            iterations, warmup, numpy_code="np.sum(u)", category="sum"
+            iterations, warmup, numpy_code="np.sum(u)", category="sum",
+            pbar=pbar
         ))
         results.append(run_benchmark(
             "pybind_sum_array (native)", setup,
             "xt.pybind_sum_array(u)", None,
-            iterations, warmup, category="sum"
+            iterations, warmup, category="sum",
+            pbar=pbar
         ))
     
     if HAS_NANOBIND:
         results.append(run_benchmark(
             "nanobind_sum_array (native)", setup,
             None, "xt.nanobind_sum_array(u)",
-            iterations, warmup, category="sum"
+            iterations, warmup, category="sum",
+            pbar=pbar
         ))
     
     # ========================================================================
@@ -221,12 +252,14 @@ def run_all_benchmarks(iterations: int, size: int, warmup: int) -> List[Benchmar
     results.append(run_benchmark(
         "auto_convert_xtensor_input", setup,
         "xt.auto_convert_xtensor_input(u)", "xt.auto_convert_xtensor_input(u)",
-        iterations, warmup, category="conversion"
+        iterations, warmup, category="conversion",
+        pbar=pbar
     ))
     results.append(run_benchmark(
         "auto_convert_xarray_input", setup,
         "xt.auto_convert_xarray_input(u)", "xt.auto_convert_xarray_input(u)",
-        iterations, warmup, category="conversion"
+        iterations, warmup, category="conversion",
+        pbar=pbar
     ))
     
     # ========================================================================
@@ -237,23 +270,27 @@ def run_all_benchmarks(iterations: int, size: int, warmup: int) -> List[Benchmar
     results.append(run_benchmark(
         "return_xtensor", setup_size,
         "xt.return_xtensor(size)", "xt.return_xtensor(size)",
-        iterations, warmup, category="conversion"
+        iterations, warmup, category="conversion",
+        pbar=pbar
     ))
     results.append(run_benchmark(
         "return_xarray", setup_size,
         "xt.return_xarray(size)", "xt.return_xarray(size)",
-        iterations, warmup, category="conversion"
+        iterations, warmup, category="conversion",
+        pbar=pbar
     ))
     results.append(run_benchmark(
         "return_pytensor (zero-copy)", setup_size,
         "xt.return_pytensor(size)", "xt.return_pytensor(size)",
-        iterations, warmup, category="conversion"
+        iterations, warmup, category="conversion",
+        pbar=pbar
     ))
     if HAS_PYBIND11:
         results.append(run_benchmark(
             "return_pyarray (zero-copy)", setup_size,
             "xt.return_pyarray(size)", None,
-            iterations, warmup, category="conversion"
+            iterations, warmup, category="conversion",
+            pbar=pbar
         ))
     
     # ========================================================================
@@ -268,20 +305,23 @@ def get_array():
         "inplace_multiply_pytensor",
         setup_inplace + "u = get_array()",
         "xt.inplace_multiply_pytensor(u)", "xt.inplace_multiply_pytensor(u)",
-        iterations, warmup, numpy_code="u *= 2.0", category="inplace"
+        iterations, warmup, numpy_code="u *= 2.0", category="inplace",
+        pbar=pbar
     ))
     results.append(run_benchmark(
         "inplace_add_pytensor",
         setup_inplace + "u = get_array()",
         "xt.inplace_add_pytensor(u, 2.0)", "xt.inplace_add_pytensor(u, 2.0)",
-        iterations, warmup, numpy_code="u += 2.0", category="inplace"
+        iterations, warmup, numpy_code="u += 2.0", category="inplace",
+        pbar=pbar
     ))
     if HAS_PYBIND11:
         results.append(run_benchmark(
             "inplace_multiply_pyarray", 
             setup_inplace + "u = get_array()",
             "xt.inplace_multiply_pyarray(u)", None,
-            iterations, warmup, category="inplace"
+            iterations, warmup, category="inplace",
+            pbar=pbar
         ))
     
     # ========================================================================
@@ -292,7 +332,8 @@ def get_array():
     results.append(run_benchmark(
         "sum_strided_view (every 2nd)", setup_view,
         "xt.sum_strided_view(u)", "xt.sum_strided_view(u)",
-        iterations, warmup, numpy_code="np.sum(u[::2])", category="view"
+        iterations, warmup, numpy_code="np.sum(u[::2])", category="view",
+        pbar=pbar
     ))
     
     # ========================================================================
@@ -303,28 +344,33 @@ def get_array():
     results.append(run_benchmark(
         "math_on_pytensor (sin+cos)", setup_math,
         "xt.math_on_pytensor(u)", "xt.math_on_pytensor(u)",
-        iterations // 10, warmup, numpy_code="np.sum(np.sin(u) + np.cos(u))", category="math"
+        iterations // 10, warmup, numpy_code="np.sum(np.sin(u) + np.cos(u))", category="math",
+        pbar=pbar
     ))
     if HAS_PYBIND11:
         results.append(run_benchmark(
             "math_on_pyarray (sin+cos)", setup_math,
             "xt.math_on_pyarray(u)", None,
-            iterations // 10, warmup, numpy_code="np.sum(np.sin(u) + np.cos(u))", category="math"
+            iterations // 10, warmup, numpy_code="np.sum(np.sin(u) + np.cos(u))", category="math",
+            pbar=pbar
         ))
     results.append(run_benchmark(
         "math_on_xtensor (with copy)", setup_math,
         "xt.math_on_xtensor(u)", "xt.math_on_xtensor(u)",
-        iterations // 10, warmup, numpy_code="np.sum(np.sin(u) + np.cos(u))", category="math"
+        iterations // 10, warmup, numpy_code="np.sum(np.sin(u) + np.cos(u))", category="math",
+        pbar=pbar
     ))
     results.append(run_benchmark(
         "math_on_xarray (with copy)", setup_math,
         "xt.math_on_xarray(u)", "xt.math_on_xarray(u)",
-        iterations // 10, warmup, category="math"
+        iterations // 10, warmup, category="math",
+        pbar=pbar
     ))
     results.append(run_benchmark(
         "math_on_view_pytensor (strided)", setup_math,
         "xt.math_on_view_pytensor(u)", "xt.math_on_view_pytensor(u)",
-        iterations // 10, warmup, numpy_code="np.sum(np.sin(u[::2]) + np.cos(u[::2]))", category="math"
+        iterations // 10, warmup, numpy_code="np.sum(np.sin(u[::2]) + np.cos(u[::2]))", category="math",
+        pbar=pbar
     ))
     
     # ========================================================================
@@ -335,18 +381,21 @@ def get_array():
     results.append(run_benchmark(
         "roundtrip_pytensor (zero-copy)", setup_round,
         "xt.roundtrip_pytensor(u)", "xt.roundtrip_pytensor(u)",
-        iterations, warmup, numpy_code="u * 2.0 + 1.0", category="roundtrip"
+        iterations, warmup, numpy_code="u * 2.0 + 1.0", category="roundtrip",
+        pbar=pbar
     ))
     if HAS_PYBIND11:
         results.append(run_benchmark(
             "roundtrip_pyarray (zero-copy)", setup_round,
             "xt.roundtrip_pyarray(u)", None,
-            iterations, warmup, category="roundtrip"
+            iterations, warmup, category="roundtrip",
+            pbar=pbar
         ))
     results.append(run_benchmark(
         "roundtrip_xtensor (with copy)", setup_round,
         "xt.roundtrip_xtensor(u)", "xt.roundtrip_xtensor(u)",
-        iterations, warmup, category="roundtrip"
+        iterations, warmup, category="roundtrip",
+        pbar=pbar
     ))
     
     # ========================================================================
@@ -358,18 +407,21 @@ def get_array():
     results.append(run_benchmark(
         f"process_large_pytensor ({large_size}x{large_size})", setup_large,
         "xt.process_large_pytensor(u)", "xt.process_large_pytensor(u)",
-        iterations, warmup, numpy_code="np.sum(u)", category="large"
+        iterations, warmup, numpy_code="np.sum(u)", category="large",
+        pbar=pbar
     ))
     if HAS_PYBIND11:
         results.append(run_benchmark(
             f"process_large_pyarray ({large_size}x{large_size})", setup_large,
             "xt.process_large_pyarray(u)", None,
-            iterations, warmup, category="large"
+            iterations, warmup, category="large",
+            pbar=pbar
         ))
     results.append(run_benchmark(
         f"process_large_xtensor ({large_size}x{large_size}, copy)", setup_large,
         "xt.process_large_xtensor(u)", "xt.process_large_xtensor(u)",
-        iterations // 10, warmup, category="large"
+        iterations // 10, warmup, category="large",
+        pbar=pbar
     ))
     
     # ========================================================================
@@ -380,20 +432,23 @@ def get_array():
     results.append(run_benchmark(
         "rect_to_polar (pyvectorize)", setup_vec,
         "xt.rect_to_polar(w)", "xt.rect_to_polar(w)",
-        iterations, warmup, numpy_code="np.abs(w)", category="vectorize"
+        iterations, warmup, numpy_code="np.abs(w)", category="vectorize",
+        pbar=pbar
     ))
     
     setup_vec_strided = f"import numpy as np\nw = np.ones({size // 5}, dtype=complex)"
     results.append(run_benchmark(
         "rect_to_polar (strided)", setup_vec_strided,
         "xt.rect_to_polar(w[::2])", "xt.rect_to_polar(w[::2])",
-        iterations, warmup, numpy_code="np.abs(w[::2])", category="vectorize"
+        iterations, warmup, numpy_code="np.abs(w[::2])", category="vectorize",
+        pbar=pbar
     ))
     if HAS_PYBIND11:
         results.append(run_benchmark(
             "pybind_rect_to_polar (native)", setup_vec_strided,
             "xt.pybind_rect_to_polar(w[::2])", None,
-            iterations, warmup, category="vectorize"
+            iterations, warmup, category="vectorize",
+            pbar=pbar
         ))
     
     # ========================================================================
@@ -403,21 +458,24 @@ def get_array():
     results.append(run_benchmark(
         "type_convert_int32_to_double", setup_int32,
         "xt.type_convert_int32_to_double(u)", "xt.type_convert_int32_to_double(u)",
-        iterations, warmup, category="type"
+        iterations, warmup, category="type",
+        pbar=pbar
     ))
     
     setup_float32 = f"import numpy as np\nu = np.ones({size}, dtype=np.float32)"
     results.append(run_benchmark(
         "type_convert_float32_to_double", setup_float32,
         "xt.type_convert_float32_to_double(u)", "xt.type_convert_float32_to_double(u)",
-        iterations, warmup, category="type"
+        iterations, warmup, category="type",
+        pbar=pbar
     ))
     
     setup_double = f"import numpy as np\nu = np.ones({size}, dtype=np.float64)"
     results.append(run_benchmark(
         "type_no_convert_double", setup_double,
         "xt.type_no_convert_double(u)", "xt.type_no_convert_double(u)",
-        iterations, warmup, category="type"
+        iterations, warmup, category="type",
+        pbar=pbar
     ))
     
     # ========================================================================
@@ -427,7 +485,8 @@ def get_array():
     results.append(run_benchmark(
         "broadcast_scalar_add", setup_broadcast,
         "xt.broadcast_scalar_add(u, 2.5)", "xt.broadcast_scalar_add(u, 2.5)",
-        iterations, warmup, numpy_code="u + 2.5", category="broadcast"
+        iterations, warmup, numpy_code="u + 2.5", category="broadcast",
+        pbar=pbar
     ))
     
     broadcast_size = 1000
@@ -438,12 +497,14 @@ row = np.arange({broadcast_size}, dtype=float)
     results.append(run_benchmark(
         f"broadcast_1d_to_2d ({broadcast_size}x{broadcast_size})", setup_broadcast_2d,
         "xt.broadcast_1d_to_2d(u, row)", "xt.broadcast_1d_to_2d(u, row)",
-        iterations // 10, warmup, numpy_code="u + row", category="broadcast"
+        iterations // 10, warmup, numpy_code="u + row", category="broadcast",
+        pbar=pbar
     ))
     results.append(run_benchmark(
         f"broadcast_and_reduce ({broadcast_size}x{broadcast_size})", setup_broadcast_2d,
         "xt.broadcast_and_reduce(u, row)", "xt.broadcast_and_reduce(u, row)",
-        iterations // 10, warmup, numpy_code="np.sum(u * row)", category="broadcast"
+        iterations // 10, warmup, numpy_code="np.sum(u * row)", category="broadcast",
+        pbar=pbar
     ))
     
     # ========================================================================
@@ -456,12 +517,14 @@ row = np.arange({broadcast_size}, dtype=float)
         "slice_contiguous (middle 50%)", setup_slice,
         f"xt.slice_contiguous(u, {slice_start}, {slice_end})",
         f"xt.slice_contiguous(u, {slice_start}, {slice_end})",
-        iterations, warmup, numpy_code=f"np.sum(u[{slice_start}:{slice_end}])", category="slice"
+        iterations, warmup, numpy_code=f"np.sum(u[{slice_start}:{slice_end}])", category="slice",
+        pbar=pbar
     ))
     results.append(run_benchmark(
         "slice_strided (every 4th)", setup_slice,
         "xt.slice_strided(u, 4)", "xt.slice_strided(u, 4)",
-        iterations, warmup, numpy_code="np.sum(u[::4])", category="slice"
+        iterations, warmup, numpy_code="np.sum(u[::4])", category="slice",
+        pbar=pbar
     ))
     
     slice_2d_size = 1000
@@ -470,7 +533,8 @@ row = np.arange({broadcast_size}, dtype=float)
         f"slice_2d_submatrix (500x500 of {slice_2d_size}x{slice_2d_size})", setup_slice_2d,
         "xt.slice_2d_submatrix(u, 250, 750, 250, 750)",
         "xt.slice_2d_submatrix(u, 250, 750, 250, 750)",
-        iterations, warmup, numpy_code="np.sum(u[250:750, 250:750])", category="slice"
+        iterations, warmup, numpy_code="np.sum(u[250:750, 250:750])", category="slice",
+        pbar=pbar
     ))
     
     setup_slice_modify = f"""import numpy as np
@@ -482,10 +546,159 @@ u = get_array()
         "slice_and_modify (inplace)", setup_slice_modify,
         f"xt.slice_and_modify(u, {slice_start}, {slice_end}, 1.0)",
         f"xt.slice_and_modify(u, {slice_start}, {slice_end}, 1.0)",
-        iterations, warmup, numpy_code=f"u[{slice_start}:{slice_end}].__iadd__(1.0)", category="slice"
+        iterations, warmup, numpy_code=f"u[{slice_start}:{slice_end}].__iadd__(1.0)", category="slice",
+        pbar=pbar
     ))
     
+    # ========================================================================
+    # Pure C++ Benchmarks (pytensor vs native xtensor)
+    # ========================================================================
+    cpp_size = 100000
+    setup_cpp = f"""import numpy as np
+u = np.ones({cpp_size}, dtype=float)
+u2d = np.ones((1000, 1000), dtype=float)
+row = np.arange(1000, dtype=float)
+"""
+    
+    results.append(run_benchmark(
+        f"cpp_native_xtensor_math ({cpp_size})",
+        f"size = {cpp_size}",
+        "xt.cpp_native_xtensor_math(size)", "xt.cpp_native_xtensor_math(size)",
+        iterations // 10, warmup, category="cpp_pure",
+        pbar=pbar
+    ))
+    results.append(run_benchmark(
+        f"cpp_pytensor_math ({cpp_size})", setup_cpp,
+        "xt.cpp_pytensor_math(u)", "xt.cpp_pytensor_math(u)",
+        iterations // 10, warmup, category="cpp_pure",
+        pbar=pbar
+    ))
+    results.append(run_benchmark(
+        "cpp_native_xtensor_2d_sum (1000x1000)",
+        "rows, cols = 1000, 1000",
+        "xt.cpp_native_xtensor_2d_sum(rows, cols)", "xt.cpp_native_xtensor_2d_sum(rows, cols)",
+        iterations // 10, warmup, category="cpp_pure",
+        pbar=pbar
+    ))
+    results.append(run_benchmark(
+        "cpp_pytensor_2d_sum (1000x1000)", setup_cpp,
+        "xt.cpp_pytensor_2d_sum(u2d)", "xt.cpp_pytensor_2d_sum(u2d)",
+        iterations // 10, warmup, category="cpp_pure",
+        pbar=pbar
+    ))
+    results.append(run_benchmark(
+        f"cpp_native_strided_view_sum ({cpp_size})",
+        f"size = {cpp_size}",
+        "xt.cpp_native_strided_view_sum(size)", "xt.cpp_native_strided_view_sum(size)",
+        iterations // 10, warmup, category="cpp_pure",
+        pbar=pbar
+    ))
+    results.append(run_benchmark(
+        f"cpp_pytensor_strided_view_sum ({cpp_size})", setup_cpp,
+        "xt.cpp_pytensor_strided_view_sum(u)", "xt.cpp_pytensor_strided_view_sum(u)",
+        iterations // 10, warmup, category="cpp_pure",
+        pbar=pbar
+    ))
+    results.append(run_benchmark(
+        "cpp_native_broadcast_reduce (1000x1000)",
+        "rows, cols = 1000, 1000",
+        "xt.cpp_native_broadcast_reduce(rows, cols)", "xt.cpp_native_broadcast_reduce(rows, cols)",
+        iterations // 10, warmup, category="cpp_pure",
+        pbar=pbar
+    ))
+    results.append(run_benchmark(
+        "cpp_pytensor_broadcast_reduce (1000x1000)", setup_cpp,
+        "xt.cpp_pytensor_broadcast_reduce(u2d, row)", "xt.cpp_pytensor_broadcast_reduce(u2d, row)",
+        iterations // 10, warmup, category="cpp_pure",
+        pbar=pbar
+    ))
+    
+    # ========================================================================
+    # No-convert Benchmarks (ensure no dtype conversion overhead)
+    # ========================================================================
+    setup_noconv = f"import numpy as np\nu = np.ones({size}, dtype=np.float64)"
+    setup_noconv_2d = f"import numpy as np\nu = np.ones((1000, 1000), dtype=np.float64)"
+    
+    results.append(run_benchmark(
+        "noconvert_sum_tensor (1D)", setup_noconv,
+        "xt.noconvert_sum_tensor(u)", "xt.noconvert_sum_tensor(u)",
+        iterations, warmup, numpy_code="np.sum(u)", category="noconvert",
+        pbar=pbar
+    ))
+    results.append(run_benchmark(
+        "noconvert_sum_tensor_2d", setup_noconv_2d,
+        "xt.noconvert_sum_tensor_2d(u)", "xt.noconvert_sum_tensor_2d(u)",
+        iterations, warmup, numpy_code="np.sum(u)", category="noconvert",
+        pbar=pbar
+    ))
+    setup_noconv_inplace = f"""import numpy as np
+def get_array():
+    return np.ones({size}, dtype=np.float64)
+u = get_array()
+"""
+    results.append(run_benchmark(
+        "noconvert_inplace_multiply", setup_noconv_inplace,
+        "xt.noconvert_inplace_multiply(u)", "xt.noconvert_inplace_multiply(u)",
+        iterations, warmup, numpy_code="u.__imul__(2.0)", category="noconvert",
+        pbar=pbar
+    ))
+    setup_noconv_math = f"import numpy as np\nu = np.random.rand({size})"
+    results.append(run_benchmark(
+        "noconvert_math (sin+cos)", setup_noconv_math,
+        "xt.noconvert_math(u)", "xt.noconvert_math(u)",
+        iterations // 10, warmup, numpy_code="np.sum(np.sin(u) + np.cos(u))", category="noconvert",
+        pbar=pbar
+    ))
+    
+    pbar.close()
     return results
+
+
+def verify_reference_semantics():
+    """Test that pytensor correctly references (not copies) numpy arrays."""
+    print("\n" + "="*80)
+    print(" REFERENCE SEMANTICS VERIFICATION")
+    print("="*80)
+    
+    import numpy as np
+    
+    tests_passed = 0
+    tests_total = 0
+    
+    # Test pybind11
+    if HAS_PYBIND11:
+        tests_total += 1
+        arr = np.zeros((3, 4), dtype=np.float64)
+        xt_pybind11.reference_test_modify(arr)
+        
+        # Check expected pattern: arr[i,j] = i * 1000 + j
+        expected = np.array([[i * 1000 + j for j in range(4)] for i in range(3)], dtype=np.float64)
+        if np.allclose(arr, expected):
+            print("  ✓ pybind11: pytensor correctly references numpy array (not copied)")
+            tests_passed += 1
+        else:
+            print("  ✗ pybind11: FAILED - array was copied, not referenced!")
+            print(f"    Expected:\n{expected}")
+            print(f"    Got:\n{arr}")
+    
+    # Test nanobind
+    if HAS_NANOBIND:
+        tests_total += 1
+        arr = np.zeros((3, 4), dtype=np.float64)
+        xt_nanobind.reference_test_modify(arr)
+        
+        # Check expected pattern: arr[i,j] = i * 1000 + j
+        expected = np.array([[i * 1000 + j for j in range(4)] for i in range(3)], dtype=np.float64)
+        if np.allclose(arr, expected):
+            print("  ✓ nanobind: pytensor correctly references numpy array (not copied)")
+            tests_passed += 1
+        else:
+            print("  ✗ nanobind: FAILED - array was copied, not referenced!")
+            print(f"    Expected:\n{expected}")
+            print(f"    Got:\n{arr}")
+    
+    print(f"\nReference tests: {tests_passed}/{tests_total} passed")
+    return tests_passed == tests_total
 
 
 def print_pybind_vs_nanobind(results: List[BenchmarkResult]):
@@ -499,6 +712,9 @@ def print_pybind_vs_nanobind(results: List[BenchmarkResult]):
         print("\nNo comparable benchmarks (need both pybind11 and nanobind)")
         return
     
+    print("\nNote: xarray auto-conversion is slower in nanobind (~1.8x) due to type caster differences.")
+    print("      This affects copy operations only; pytensor zero-copy operations are unaffected.")
+    
     # Group by category
     categories = {}
     for r in comparable:
@@ -510,7 +726,7 @@ def print_pybind_vs_nanobind(results: List[BenchmarkResult]):
     print(f"\n{'Benchmark':<45} {'pybind11':>12} {'nanobind':>12} {'Winner':>12}")
     print("-" * 83)
     
-    stats = {"pybind11": 0, "nanobind": 0, "comparable": 0}
+    stats = {"pybind11": 0, "nanobind": 0, "lean pb": 0, "lean nb": 0}
     
     for category, cat_results in categories.items():
         print(f"\n[{category}]")
@@ -526,8 +742,10 @@ def print_pybind_vs_nanobind(results: List[BenchmarkResult]):
             elif winner == "pybind11":
                 ratio = r.nanobind_time / r.pybind11_time
                 winner_str = f"pb {ratio:.2f}x ✓"
+            elif winner == "lean nb":
+                winner_str = "lean nb"
             else:
-                winner_str = "~equal"
+                winner_str = "lean pb"
             
             stats[winner] += 1
             print(f"  {r.name:<43} {pb:>12} {nb:>12} {winner_str:>12}")
@@ -536,9 +754,10 @@ def print_pybind_vs_nanobind(results: List[BenchmarkResult]):
     print("\n" + "-" * 83)
     total = sum(stats.values())
     print(f"\nSummary ({total} benchmarks):")
-    print(f"  nanobind faster: {stats['nanobind']:>3} ({100*stats['nanobind']/total:.0f}%)")
-    print(f"  pybind11 faster: {stats['pybind11']:>3} ({100*stats['pybind11']/total:.0f}%)")
-    print(f"  comparable:      {stats['comparable']:>3} ({100*stats['comparable']/total:.0f}%)")
+    print(f"  nanobind faster (>7%): {stats['nanobind']:>3} ({100*stats['nanobind']/total:.0f}%)")
+    print(f"  pybind11 faster (>7%): {stats['pybind11']:>3} ({100*stats['pybind11']/total:.0f}%)")
+    lean_total = stats['lean pb'] + stats['lean nb']
+    print(f"  within 7% margin:      {lean_total:>3} ({100*lean_total/total:.0f}%) [lean pb: {stats['lean pb']}, lean nb: {stats['lean nb']}]")
 
 
 def print_xtensor_vs_numpy(results: List[BenchmarkResult]):
@@ -566,6 +785,11 @@ def print_xtensor_vs_numpy(results: List[BenchmarkResult]):
         preferred_framework = "pybind11"
         print("\nUsing: pybind11 (only available)")
     
+    # Note about comparison fairness
+    print("\nNote: These benchmarks test element-wise operations (sum, sin, cos), not BLAS.")
+    print("      Both NumPy and xtensor use SIMD (AVX/AVX-512) for these operations.")
+    print("      Performance differences are due to implementation details and overhead.")
+    
     # Group by category
     categories = {}
     for r in with_numpy:
@@ -577,7 +801,7 @@ def print_xtensor_vs_numpy(results: List[BenchmarkResult]):
     print(f"\n{'Benchmark':<45} {'xtensor':>12} {'NumPy':>12} {'Comparison':>15}")
     print("-" * 86)
     
-    stats = {"xtensor": 0, "numpy": 0, "comparable": 0}
+    stats = {"xtensor": 0, "numpy": 0, "lean xt": 0, "lean np": 0}
     
     for category, cat_results in categories.items():
         print(f"\n[{category}]")
@@ -596,15 +820,18 @@ def print_xtensor_vs_numpy(results: List[BenchmarkResult]):
             # Calculate comparison
             if xt_time and r.numpy_time:
                 ratio = r.numpy_time / xt_time
-                if ratio > 1.05:
+                if ratio > 1.07:
                     cmp_str = f"xt {ratio:.1f}x faster ✓"
                     stats["xtensor"] += 1
-                elif ratio < 0.95:
+                elif ratio < 0.93:
                     cmp_str = f"np {1/ratio:.1f}x faster"
                     stats["numpy"] += 1
+                elif ratio >= 1.0:
+                    cmp_str = "lean xt"
+                    stats["lean xt"] += 1
                 else:
-                    cmp_str = "~equal"
-                    stats["comparable"] += 1
+                    cmp_str = "lean np"
+                    stats["lean np"] += 1
             else:
                 cmp_str = "N/A"
             
@@ -615,9 +842,10 @@ def print_xtensor_vs_numpy(results: List[BenchmarkResult]):
     total = sum(stats.values())
     if total > 0:
         print(f"\nSummary ({total} benchmarks):")
-        print(f"  xtensor faster: {stats['xtensor']:>3} ({100*stats['xtensor']/total:.0f}%)")
-        print(f"  numpy faster:   {stats['numpy']:>3} ({100*stats['numpy']/total:.0f}%)")
-        print(f"  comparable:     {stats['comparable']:>3} ({100*stats['comparable']/total:.0f}%)")
+        print(f"  xtensor faster (>7%): {stats['xtensor']:>3} ({100*stats['xtensor']/total:.0f}%)")
+        print(f"  numpy faster (>7%):   {stats['numpy']:>3} ({100*stats['numpy']/total:.0f}%)")
+        lean_total = stats['lean xt'] + stats['lean np']
+        print(f"  within 7% margin:     {lean_total:>3} ({100*lean_total/total:.0f}%) [lean xt: {stats['lean xt']}, lean np: {stats['lean np']}]")
 
 
 def main():
@@ -641,6 +869,12 @@ def main():
     print(f"  Array size: {size:,}")
     print(f"  Iterations: {iterations:,}")
     print(f"  Warmup: {warmup}")
+    
+    # Run reference semantics verification first
+    ref_ok = verify_reference_semantics()
+    if not ref_ok:
+        print("\n⚠ WARNING: Reference semantics test FAILED!")
+        print("  pytensor may be copying arrays instead of referencing them.")
     
     # Run all benchmarks
     print("\nRunning benchmarks...")

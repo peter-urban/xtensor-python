@@ -17,7 +17,9 @@ find_package(nanobind CONFIG REQUIRED)
 find_package(xtensor REQUIRED)
 
 # Build the extension
-nanobind_add_module(xtensor_nanobind_test main_nanobind.cpp)
+# NOMINSIZE: Disable -Os flag which significantly slows down xtensor operations
+#            (xt::sum becomes ~2x slower with -Os due to disabled inlining)
+nanobind_add_module(xtensor_nanobind_test NOMINSIZE main_nanobind.cpp)
 
 target_include_directories(xtensor_nanobind_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include

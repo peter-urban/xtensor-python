@@ -31,10 +31,11 @@ NAMESPACE_BEGIN(NB_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
     // Helper to get ndarray type based on layout
+    // Default (including dynamic) uses c_contig since that's NumPy's default and most common case
     template <typename T, xt::layout_type L>
     struct nanobind_array_getter_impl
     {
-        using type = ::nanobind::ndarray<T, ::nanobind::numpy, ::nanobind::any_contig>;
+        using type = ::nanobind::ndarray<T, ::nanobind::numpy, ::nanobind::c_contig>;
     };
 
     template <typename T>
