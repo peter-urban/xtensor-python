@@ -46,6 +46,10 @@ except ImportError:
 
 here = os.path.abspath(os.path.dirname(__file__))
 
+# Maximum characters to show from build output on failure
+MAX_STDERR_CHARS = 2000
+MAX_STDOUT_CHARS = 1000
+
 
 def build_extension(name: str, setup_script: str) -> bool:
     """Build an extension and return True if successful."""
@@ -62,9 +66,9 @@ def build_extension(name: str, setup_script: str) -> bool:
         # If build fails, show the error for debugging
         print(f"Failed to build {name}:")
         if result.stderr:
-            print(f"  stderr: {result.stderr[-2000:]}")  # Last 2000 chars of stderr
+            print(f"  stderr: {result.stderr[-MAX_STDERR_CHARS:]}")
         if result.stdout:
-            print(f"  stdout: {result.stdout[-1000:]}")  # Last 1000 chars of stdout
+            print(f"  stdout: {result.stdout[-MAX_STDOUT_CHARS:]}")
         return False
     except Exception as e:
         print(f"Failed to build {name}: {e}")
