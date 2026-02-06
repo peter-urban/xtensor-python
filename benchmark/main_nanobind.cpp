@@ -9,6 +9,7 @@
 #include <complex>
 #include <cmath>
 #include <numeric>
+#include <memory>
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -32,12 +33,13 @@ NB_MODULE(benchmark_xtensor_nanobind, m)
 
     m.def("nanobind_rect_to_polar", [](nb::ndarray<nb::numpy, complex_t, nb::ndim<1>> const& a) {
         size_t n = a.shape(0);
-        double* result_data = new double[n];
+        auto result = std::make_unique<double[]>(n);
         const complex_t* data = a.data();
         for (size_t i = 0; i < n; ++i) {
-            result_data[i] = std::abs(data[i]);
+            result[i] = std::abs(data[i]);
         }
-        nb::capsule deleter(result_data, [](void* p) noexcept { delete[] static_cast<double*>(p); });
-        return nb::ndarray<nb::numpy, double, nb::ndim<1>>(result_data, {n}, deleter);
+        double* raw = result.release();
+        nb::capsule deleter(raw, [](void* p) noexcept { delete[] static_cast<double*>(p); });
+        return nb::ndarray<nb::numpy, double, nb::ndim<1>>(raw, {n}, deleter);
     });
 }

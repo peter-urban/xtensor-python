@@ -87,7 +87,7 @@ if(NOT NANOBIND_RESULT EQUAL 0)
 endif()
 
 find_package(nanobind CONFIG REQUIRED)
-message(STATUS "Benchmark: Found nanobind")
+message(STATUS "Benchmark: Found nanobind v${nanobind_VERSION}")
 
 # ============================================================================
 # pybind11 benchmark module
