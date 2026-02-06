@@ -89,17 +89,24 @@ def import_extension(name: str):
         return None
 
 
-# Build and import extensions
-print("Building extensions...")
+# Load extensions: try importing pre-built modules first (e.g. from CMake build),
+# then fall back to building from source via setup.py
+print("Loading extensions...")
 
 # pybind11 version
-HAS_PYBIND11 = build_extension("pybind11", "setup.py")
-xt_pybind11 = import_extension("benchmark_xtensor_python") if HAS_PYBIND11 else None
+xt_pybind11 = import_extension("benchmark_xtensor_python")
+if xt_pybind11 is None:
+    print("  pybind11 module not found, attempting to build from source...")
+    if build_extension("pybind11", "setup.py"):
+        xt_pybind11 = import_extension("benchmark_xtensor_python")
 HAS_PYBIND11 = xt_pybind11 is not None
 
 # nanobind version
-HAS_NANOBIND = build_extension("nanobind", "setup_nanobind.py")
-xt_nanobind = import_extension("benchmark_xtensor_nanobind") if HAS_NANOBIND else None
+xt_nanobind = import_extension("benchmark_xtensor_nanobind")
+if xt_nanobind is None:
+    print("  nanobind module not found, attempting to build from source...")
+    if build_extension("nanobind", "setup_nanobind.py"):
+        xt_nanobind = import_extension("benchmark_xtensor_nanobind")
 HAS_NANOBIND = xt_nanobind is not None
 
 print("\nAvailable backends:")
@@ -107,8 +114,8 @@ print(f"  pybind11: {'[OK]' if HAS_PYBIND11 else '[FAIL]'}")
 print(f"  nanobind: {'[OK]' if HAS_NANOBIND else '[FAIL]'}")
 
 if not HAS_PYBIND11 and not HAS_NANOBIND:
-    print("\nWarning: No backend available! Skipping benchmarks.")
-    sys.exit(0)
+    print("\nError: No backend available!")
+    sys.exit(1)
 
 
 class BenchmarkResult:
@@ -874,7 +881,18 @@ def main():
                         help="Array size for benchmarks")
     parser.add_argument("--warmup", "-w", type=int, default=3,
                         help="Number of warmup iterations")
+    parser.add_argument("--require-all", action="store_true",
+                        help="Require both pybind11 and nanobind backends (exit with error if either is missing)")
     args = parser.parse_args()
+
+    if args.require_all and not (HAS_PYBIND11 and HAS_NANOBIND):
+        missing = []
+        if not HAS_PYBIND11:
+            missing.append("pybind11")
+        if not HAS_NANOBIND:
+            missing.append("nanobind")
+        print(f"\nError: --require-all specified but missing backends: {', '.join(missing)}")
+        sys.exit(1)
     
     iterations = args.iterations
     size = args.size
