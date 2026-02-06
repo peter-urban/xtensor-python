@@ -79,19 +79,19 @@ def has_flag(compiler, flagname):
 
 
 def cpp_flag(compiler):
-    """Return the -std=c++17 compiler flag and errors when the flag is
+    """Return the -std=c++20 compiler flag and errors when the flag is
     not available.
     """
-    if has_flag(compiler, '-std=c++17'):
-        return '-std=c++17'
+    if has_flag(compiler, '-std=c++20'):
+        return '-std=c++20'
     else:
-        raise RuntimeError('C++17 support is required by xtensor!')
+        raise RuntimeError('C++20 support is required by xtensor!')
 
 
 class BuildExt(build_ext):
     """A custom build extension for adding compiler-specific options."""
     c_opts = {
-        'msvc': ['/EHsc', '/std:c++17'],
+        'msvc': ['/EHsc', '/std:c++20'],
         'unix': [],
     }
 
