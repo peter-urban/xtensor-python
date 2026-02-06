@@ -32,19 +32,33 @@ class get_numpy_include(object):
         import numpy
         return numpy.get_include()
 
+def get_include_dirs():
+    """Build list of include directories, with conditional CONDA_PREFIX support."""
+    dirs = [
+        # Path to xtensor-python headers
+        '../include/',
+        # Path to pybind11 headers
+        get_pybind_include(),
+        get_pybind_include(user=True),
+        # Path to numpy headers
+        get_numpy_include(),
+        # System/virtualenv include path
+        os.path.join(sys.prefix, 'include'),
+        os.path.join(sys.prefix, 'Library', 'include'),
+    ]
+    # Add conda environment paths if CONDA_PREFIX differs from sys.prefix
+    conda_prefix = os.environ.get('CONDA_PREFIX')
+    if conda_prefix and conda_prefix != sys.prefix:
+        dirs.append(os.path.join(conda_prefix, 'include'))
+        dirs.append(os.path.join(conda_prefix, 'Library', 'include'))
+    return dirs
+
+
 ext_modules = [
     Extension(
         'benchmark_xtensor_python',
         ['main.cpp'],
-        include_dirs=[
-            # Path to pybind11 headers
-            get_pybind_include(),
-            get_pybind_include(user=True),
-            # Path to numpy headers
-            get_numpy_include(),
-            os.path.join(sys.prefix, 'include'),
-            os.path.join(sys.prefix, 'Library', 'include')
-        ],
+        include_dirs=get_include_dirs(),
         language='c++'
     ),
 ]

@@ -63,6 +63,35 @@ if(MSVC)
     endforeach()
 endif()
 
+# ============================================================================
+# Require pybind11
+# ============================================================================
+if (NOT TARGET pybind11::headers)
+    set(PYBIND11_FINDPYTHON OFF)
+    find_package(pybind11 REQUIRED)
+endif()
+message(STATUS "Benchmark: Found pybind11 v${pybind11_VERSION}")
+
+# ============================================================================
+# Require nanobind
+# ============================================================================
+execute_process(
+    COMMAND "${PYTHON_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE nanobind_ROOT
+    RESULT_VARIABLE NANOBIND_RESULT
+)
+
+if(NOT NANOBIND_RESULT EQUAL 0)
+    message(FATAL_ERROR "nanobind not found! Install nanobind (e.g. 'conda install nanobind' or 'pip install nanobind').")
+endif()
+
+find_package(nanobind CONFIG REQUIRED)
+message(STATUS "Benchmark: Found nanobind")
+
+# ============================================================================
+# pybind11 benchmark module
+# ============================================================================
 set(XTENSOR_PYTHON_BENCHMARK
     main.cpp
 )
@@ -82,12 +111,33 @@ else ()
     target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} PRIVATE xtensor-python)
 endif()
 
+# ============================================================================
+# nanobind benchmark module
+# ============================================================================
+nanobind_add_module(benchmark_xtensor_nanobind EXCLUDE_FROM_ALL
+    main_nanobind.cpp
+)
+
+target_include_directories(benchmark_xtensor_nanobind PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${NUMPY_INCLUDE_DIRS}
+)
+
+target_link_libraries(benchmark_xtensor_nanobind PRIVATE xtensor)
+
+# ============================================================================
+# Copy benchmark scripts
+# ============================================================================
 configure_file(benchmark_pyarray.py benchmark_pyarray.py COPYONLY)
 configure_file(benchmark_pytensor.py benchmark_pytensor.py COPYONLY)
 configure_file(benchmark_pybind_array.py benchmark_pybind_array.py COPYONLY)
 configure_file(benchmark_pyvectorize.py benchmark_pyvectorize.py COPYONLY)
 configure_file(benchmark_pybind_vectorize.py benchmark_pybind_vectorize.py COPYONLY)
+configure_file(run_benchmarks.py run_benchmarks.py COPYONLY)
 
+# ============================================================================
+# Benchmark targets
+# ============================================================================
 add_custom_target(xbenchmark
         COMMAND "${PYTHON_EXECUTABLE}" "benchmark_pyarray.py"
         COMMAND "${PYTHON_EXECUTABLE}" "benchmark_pytensor.py"
@@ -96,3 +146,7 @@ add_custom_target(xbenchmark
         COMMAND "${PYTHON_EXECUTABLE}" "benchmark_pybind_vectorize.py"
         DEPENDS ${XTENSOR_PYTHON_BENCHMARK_TARGET})
 
+add_custom_target(xbenchmark_full
+        COMMAND "${PYTHON_EXECUTABLE}" "run_benchmarks.py"
+        DEPENDS ${XTENSOR_PYTHON_BENCHMARK_TARGET} benchmark_xtensor_nanobind
+        COMMENT "Running full benchmark suite (pybind11 vs nanobind comparison)")
