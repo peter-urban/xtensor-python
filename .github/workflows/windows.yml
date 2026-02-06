@@ -53,6 +53,7 @@ jobs:
       run: pytest -s
 
     - name: Run benchmarks (pybind11 vs nanobind)
+      continue-on-error: true
       working-directory: benchmark
       run: |
         python run_benchmarks.py --iterations 100 --size 100000

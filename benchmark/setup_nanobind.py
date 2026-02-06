@@ -74,39 +74,41 @@ target_link_libraries(benchmark_xtensor_nanobind PRIVATE xtensor)
 # Enable optimizations
 target_compile_options(benchmark_xtensor_nanobind PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-O3 -march=native -fvisibility=hidden>
-    $<$<CXX_COMPILER_ID:MSVC>:/O2>
+    $<$<CXX_COMPILER_ID:MSVC>:/O2 /bigobj /EHsc>
 )
 """
     cmake_file = os.path.join(build_dir, 'CMakeLists.txt')
     with open(cmake_file, 'w') as f:
         f.write(cmake_content)
 
-    # Symlink the source file
+    # Copy the source file (more robust than symlink, especially on Windows)
     src_file = os.path.join(here, 'main_nanobind.cpp')
     dst_file = os.path.join(build_dir, 'main_nanobind.cpp')
-    if os.path.exists(dst_file):
-        os.remove(dst_file)
-    os.symlink(src_file, dst_file)
+    shutil.copy2(src_file, dst_file)
 
-    # Configure
+    # Configure - use Ninja generator if available (avoids multi-config issues on Windows)
     cmake_args = [
         'cmake',
         '.',
-        f'-DCMAKE_BUILD_TYPE=Release',
+        '-DCMAKE_BUILD_TYPE=Release',
     ]
+    if shutil.which('ninja'):
+        cmake_args.extend(['-G', 'Ninja'])
 
     print(f"Configuring with: {' '.join(cmake_args)}")
     subprocess.check_call(cmake_args, cwd=build_dir)
 
     # Build
-    build_args = ['cmake', '--build', '.', '--config', 'Release', '-j4']
+    build_args = ['cmake', '--build', '.', '--config', 'Release']
     print(f"Building with: {' '.join(build_args)}")
     subprocess.check_call(build_args, cwd=build_dir)
 
     # Copy the built extension to the source directory
-    so_files = glob.glob(os.path.join(build_dir, 'benchmark_xtensor_nanobind*.so'))
-    if not so_files:
-        so_files = glob.glob(os.path.join(build_dir, 'benchmark_xtensor_nanobind*.pyd'))
+    # Search in build dir and common multi-config subdirectories (e.g., Release/)
+    so_files = []
+    for search_dir in [build_dir, os.path.join(build_dir, 'Release'), os.path.join(build_dir, 'Debug')]:
+        so_files.extend(glob.glob(os.path.join(search_dir, 'benchmark_xtensor_nanobind*.so')))
+        so_files.extend(glob.glob(os.path.join(search_dir, 'benchmark_xtensor_nanobind*.pyd')))
     for so_file in so_files:
         dest = os.path.join(here, os.path.basename(so_file))
         print(f"Copying {so_file} to {dest}")
