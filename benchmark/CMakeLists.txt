@@ -75,8 +75,11 @@ message(STATUS "Benchmark: Found pybind11 v${pybind11_VERSION}")
 # ============================================================================
 # Require nanobind
 # ============================================================================
+# nanobind requires find_package(Python) with Development component
+find_package(Python COMPONENTS Interpreter Development REQUIRED)
+
 execute_process(
-    COMMAND "${PYTHON_EXECUTABLE}" -m nanobind --cmake_dir
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
     OUTPUT_STRIP_TRAILING_WHITESPACE
     OUTPUT_VARIABLE nanobind_ROOT
     RESULT_VARIABLE NANOBIND_RESULT
