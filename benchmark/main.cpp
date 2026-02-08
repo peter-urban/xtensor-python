@@ -426,7 +426,7 @@ PYBIND11_MODULE(benchmark_xtensor_python, m)
     // Test if the slowdown is in Type::from_shape by using pre-sized containers
     m.def("diag_xtensor_presized", [](py::array_t<double, py::array::c_style | py::array::forcecast> const& arr) {
         auto buf = arr.request();
-        xt::xtensor<double, 1> result({static_cast<size_t>(buf.shape[0])});
+        xt::xtensor<double, 1> result = xt::xtensor<double, 1>::from_shape({static_cast<size_t>(buf.shape[0])});
         std::copy(static_cast<double*>(buf.ptr), static_cast<double*>(buf.ptr) + buf.size, result.data());
         return xt::sum(result)();
     });

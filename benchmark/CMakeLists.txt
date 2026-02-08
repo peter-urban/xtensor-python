@@ -77,12 +77,11 @@ add_library(${XTENSOR_PYTHON_BENCHMARK_TARGET} MODULE EXCLUDE_FROM_ALL
 set_target_properties(${XTENSOR_PYTHON_BENCHMARK_TARGET} PROPERTIES PREFIX "")
 set_target_properties(${XTENSOR_PYTHON_BENCHMARK_TARGET} PROPERTIES SUFFIX "${PYTHON_MODULE_EXTENSION}")
 
+target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} PRIVATE xtensor-python)
 if (APPLE)
     target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} PRIVATE "-undefined dynamic_lookup")
 elseif (MSVC)
-    target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} ${PYTHON_LIBRARIES})
-else ()
-    target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} PRIVATE xtensor-python)
+    target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} PRIVATE ${PYTHON_LIBRARIES})
 endif()
 
 # ============================================================================

@@ -389,7 +389,7 @@ NB_MODULE(benchmark_xtensor_nanobind, m)
     // Test if the slowdown is in Type::from_shape by using pre-sized containers
     m.def("diag_xtensor_presized", [](nb::ndarray<double, nb::numpy, nb::c_contig> const& arr) {
         // Create with explicit size, not from_shape
-        xt::xtensor<double, 1> result({arr.shape(0)});
+        xt::xtensor<double, 1> result = xt::xtensor<double, 1>::from_shape({arr.shape(0)});
         std::copy(arr.data(), arr.data() + arr.size(), result.data());
         return xt::sum(result)();
     });

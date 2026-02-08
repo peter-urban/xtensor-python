@@ -31,7 +31,7 @@ jobs:
         cache-environment: true
 
     - name: Configure using CMake
-      run: cmake -G Ninja -Bbuild -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DPYTHON_EXECUTABLE=`which python` -DDOWNLOAD_GTEST=ON $(Build.SourcesDirectory)
+      run: cmake -G Ninja -Bbuild -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DPYTHON_EXECUTABLE=`which python` -DDOWNLOAD_GTEST=ON -DBUILD_NANOBIND_BENCHMARK=ON $(Build.SourcesDirectory)
 
     - name: Install
       working-directory: build
@@ -39,7 +39,7 @@ jobs:
 
     - name: Build
       working-directory: build
-      run: cmake --build . --target test_xtensor_python_pybind11 test_xtensor_python_nanobind --parallel 8
+      run: cmake --build . --target test_xtensor_python_pybind11 test_xtensor_python_nanobind benchmark_xtensor_python benchmark_xtensor_nanobind --parallel 8
 
     - name: Run tests (C++ pybind11)
       working-directory: build/test
@@ -53,7 +53,6 @@ jobs:
       run: pytest -s
 
     - name: Run benchmarks (pybind11 vs nanobind)
-      continue-on-error: true
-      working-directory: benchmark
+      working-directory: build/benchmark
       run: |
-        python run_benchmarks.py --iterations 100 --size 100000
+        python run_benchmarks.py --iterations 100 --size 100000 --require-all
