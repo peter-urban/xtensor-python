@@ -81,7 +81,7 @@ target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} PRIVATE xtensor-python)
 if (APPLE)
     target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} PRIVATE "-undefined dynamic_lookup")
 elseif (MSVC)
-    target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} ${PYTHON_LIBRARIES})
+    target_link_libraries(${XTENSOR_PYTHON_BENCHMARK_TARGET} PRIVATE ${PYTHON_LIBRARIES})
 endif()
 
 # ============================================================================
