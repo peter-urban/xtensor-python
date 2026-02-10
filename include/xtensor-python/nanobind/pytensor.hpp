@@ -285,8 +285,18 @@ namespace xt
             template <class S = shape_type>
             static pytensor from_shape(S&& shape);
 
-            // Overload for initializer_list<size_t> to avoid narrowing warnings
+            // Overload for initializer_list<size_t> to avoid narrowing warnings for integer literals
             static pytensor from_shape(std::initializer_list<std::size_t> shape);
+
+            // Overload for initializer_list of other integral types (e.g. ptrdiff_t / long)
+            // to avoid C++11 narrowing errors with non-constant expressions.
+            template <class I,
+                      std::enable_if_t<std::is_integral_v<I>
+                                           && !std::is_same_v<std::remove_cv_t<I>, bool>
+                                           && !std::is_same_v<std::remove_cv_t<I>, std::size_t>,
+                                       int>
+                      = 0>
+            static pytensor from_shape(std::initializer_list<I> shape);
 
             // Copy/move
             pytensor(const self_type& rhs);
@@ -536,6 +546,37 @@ namespace xt
             shape_type shp;
             std::transform(shape.begin(), shape.end(), shp.begin(),
                 [](std::size_t v) { return static_cast<std::ptrdiff_t>(v); });
+            return self_type(shp);
+        }
+
+        /**
+         * Allocates and returns a pytensor with the specified shape.
+         * Overload for initializer_list of integral types other than size_t.
+         * This avoids C++11 narrowing errors for non-constant signed sizes.
+         * @param shape the shape of the pytensor
+         */
+        template <class T, std::size_t N, layout_type L>
+        template <class I,
+                  std::enable_if_t<std::is_integral_v<I>
+                                       && !std::is_same_v<std::remove_cv_t<I>, bool>
+                                       && !std::is_same_v<std::remove_cv_t<I>, std::size_t>,
+                                   int>>
+        inline pytensor<T, N, L> pytensor<T, N, L>::from_shape(std::initializer_list<I> shape)
+        {
+            detail::check_dims<shape_type>::run(shape.size());
+            shape_type shp;
+            auto out = shp.begin();
+            for (auto v : shape)
+            {
+                if constexpr (std::is_signed_v<I>)
+                {
+                    if (v < 0)
+                    {
+                        throw std::invalid_argument("pytensor::from_shape: negative dimension");
+                    }
+                }
+                *out++ = static_cast<std::ptrdiff_t>(v);
+            }
             return self_type(shp);
         }
         //@}

@@ -113,6 +113,13 @@ namespace xt
         EXPECT_TRUE(std::equal(arr.shape().begin(), arr.shape().end(), exp_shape.begin()));
         EXPECT_EQ(arr.shape().size(), 3);
         EXPECT_EQ(arr.size(), 5 * 2 * 6);
+
+        // Regression: avoid C++11 narrowing errors for non-constant signed sizes
+        std::ptrdiff_t n = 7;
+        auto vec = pytensor<double, 1>::from_shape({n});
+        EXPECT_EQ(vec.shape().size(), 1);
+        EXPECT_EQ(vec.shape()[0], n);
+        EXPECT_EQ(vec.size(), static_cast<std::size_t>(n));
 #if BACKEND_HAS_FROM_SHAPE_EXCEPTION_TEST
         using pyt3 = pytensor<double, 3>;
         std::vector<std::size_t> shp = std::vector<std::size_t>{5, 2};
